@@ -1,6 +1,8 @@
 #!/usr/bin/env python3w
 """Nous Free Models - tiny window that follows the installed Hermes skin."""
 import datetime
+import json
+import os
 import threading
 import tkinter as tk
 from tkinter import ttk
@@ -9,20 +11,48 @@ import hermes_state
 import nous_core
 import theme
 
+FONT = "Segoe UI"
+SZ_TITLE = 20
+SZ_BODY = 13
+SZ_TREE = 14
+SZ_HEAD = 13
+
 COLS = ("Model", "Context", "Inputs", "Price", "Flags", "Source")
-WIDTHS = {"Model": 320, "Context": 95, "Inputs": 140, "Price": 90, "Flags": 190, "Source": 110}
+WIDTHS = {"Model": 360, "Context": 110, "Inputs": 160, "Price": 100, "Flags": 210, "Source": 120}
 CFG_COLS = ("Role", "Model", "Provider", "Status", "Notes")
-CFG_WIDTHS = {"Role": 170, "Model": 300, "Provider": 80, "Status": 90, "Notes": 230}
-REFRESH_MS = 15 * 60 * 1000
+CFG_WIDTHS = {"Role": 190, "Model": 340, "Provider": 90, "Status": 100, "Notes": 260}
+
+MODELS_REFRESH_MS = 15 * 60 * 1000
+DEEP_REFRESH_MS = 4 * 60 * 60 * 1000
 POLL_MS = 3000
+UI_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ui_state.json")
+
+
+def load_ui_state():
+    try:
+        with open(UI_FILE, encoding="utf-8") as fh:
+            state = json.load(fh)
+        if isinstance(state, dict):
+            return state
+    except (OSError, ValueError):
+        pass
+    return {}
+
+
+def save_ui_state(state):
+    try:
+        with open(UI_FILE, "w", encoding="utf-8") as fh:
+            json.dump(state, fh)
+    except OSError:
+        pass
 
 
 class App(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("Nous Free Models")
-        self.geometry("1060x620")
-        self.minsize(880, 460)
+        self.geometry("1180x700")
+        self.minsize(960, 540)
         self.models = []
         self.cfg_rows = []
         self.usage_data = {"counts": {}, "fallbacks": [], "last": None}
@@ -30,10 +60,17 @@ class App(tk.Tk):
         self.meta = {}
         self.choice = theme.load_choice()
         self.skins = ["Auto (follow Hermes)"] + theme.skin_names()
+        self.ui = load_ui_state()
+        self.last_models = "-"
+        self.last_deep = "-"
         self._busy = False
-        self._after_id = None
+        self._models_after_id = None
+        self._deep_after_id = None
         self._poll_id = None
         self.combo_var = tk.StringVar()
+        self.split_var = tk.BooleanVar(value=bool(self.ui.get("split")))
+        self.auto_models_var = tk.BooleanVar(value=bool(self.ui.get("auto_models")))
+        self.deep_var = tk.BooleanVar(value=bool(self.ui.get("deep")))
 
         palette, meta = theme.resolve(self.choice)
         self.palette, self.meta = palette, meta
@@ -42,6 +79,7 @@ class App(tk.Tk):
         self._build_ui()
         self._sync_combo()
         self.after(200, self.refresh)
+        self._apply_timers()
         self._schedule_poll()
 
     # ---------- theming ----------
@@ -55,21 +93,21 @@ class App(tk.Tk):
         style.theme_use("clam")
         style.configure(
             "Treeview", background=p["card"], foreground=p["fg"],
-            fieldbackground=p["card"], borderwidth=0, rowheight=32,
-            font=("Segoe UI", 12),
+            fieldbackground=p["card"], borderwidth=0, rowheight=38,
+            font=(FONT, SZ_TREE),
         )
         style.configure(
             "Treeview.Heading", background=p["head_bg"], foreground=p["head_fg"],
-            relief="flat", font=("Segoe UI Semibold", 11), padding=(6, 4),
+            relief="flat", font=("Segoe UI Semibold", SZ_HEAD), padding=(8, 6),
         )
         style.map(
             "Treeview",
             background=[("selected", p["selection"])],
             foreground=[("selected", p["fg"])],
         )
-        style.configure("TButton", background=p["head_bg"], foreground=p["fg"], borderwidth=0, padding=9)
+        style.configure("TButton", background=p["head_bg"], foreground=p["fg"], borderwidth=0, padding=12)
         style.map("TButton", background=[("active", p["border"])])
-        style.configure("TCheckbutton", background=p["bg"], foreground=p["dim"], font=("Segoe UI", 11))
+        style.configure("TCheckbutton", background=p["bg"], foreground=p["dim"], font=(FONT, SZ_BODY))
         style.map("TCheckbutton", background=[("active", p["bg"])])
         style.configure("Vertical.TScrollbar", background=p["head_bg"], troughcolor=p["bg"], borderwidth=0)
         style.configure(
@@ -80,7 +118,7 @@ class App(tk.Tk):
         style.configure("TNotebook", background=p["bg"], borderwidth=0)
         style.configure(
             "TNotebook.Tab", background=p["head_bg"], foreground=p["dim"],
-            padding=(14, 7),
+            padding=(16, 8),
         )
         style.map(
             "TNotebook.Tab",
@@ -94,6 +132,9 @@ class App(tk.Tk):
             self.meta = meta
         self.configure(bg=self.palette["bg"])
         self._style()
+        self._rebuild()
+
+    def _rebuild(self):
         self._build_ui()
         self._sync_combo()
         for model in self.models:
@@ -147,50 +188,84 @@ class App(tk.Tk):
         for widget in self.winfo_children():
             widget.destroy()
         self._build_toolbar()
+        if self.split_var.get():
+            self._build_split()
+        else:
+            self._build_notebook()
+        self._build_options()
+        self._build_status()
+
+    def _build_toolbar(self):
+        p = self.palette
+        bar = tk.Frame(self, bg=p["bg"])
+        bar.pack(fill="x", padx=14, pady=(14, 4))
+
+        tk.Label(bar, text="Nous Free Models", bg=p["bg"], fg=p["fg"],
+                 font=("Segoe UI Semibold", SZ_TITLE)).pack(side="left")
+        self.info = tk.Label(bar, text="", bg=p["bg"], fg=p["dim"], font=(FONT, SZ_BODY))
+        self.info.pack(side="left", padx=(16, 0))
+
+        combo = ttk.Combobox(
+            bar, textvariable=self.combo_var, values=self.skins,
+            state="readonly", width=24,
+        )
+        combo.bind("<<ComboboxSelected>>", self._on_skin_select)
+        combo.pack(side="right", padx=(8, 0))
+
+        ttk.Button(bar, text="About", command=self.show_about).pack(side="right", padx=8)
+        ttk.Button(bar, text="Copy slug", command=self.copy_selected).pack(side="right", padx=8)
+        ttk.Button(bar, text="Refresh", command=self.refresh).pack(side="right")
+
+    def _build_notebook(self):
         self.nb = ttk.Notebook(self)
-        self.nb.pack(fill="both", expand=True, padx=12, pady=(4, 6))
+        self.nb.pack(fill="both", expand=True, padx=14, pady=(4, 2))
         tab_free = tk.Frame(self.nb, bg=self._c("bg"))
         tab_cfg = tk.Frame(self.nb, bg=self._c("bg"))
         self.nb.add(tab_free, text="Free models")
         self.nb.add(tab_cfg, text="In Hermes")
         self._build_catalog_tab(tab_free)
         self._build_config_tab(tab_cfg)
-        self._build_status()
 
-    def _build_toolbar(self):
-        p = self.palette
-        bar = tk.Frame(self, bg=p["bg"])
-        bar.pack(fill="x", padx=12, pady=(12, 4))
+    def _build_split(self):
+        self.pane = ttk.Panedwindow(self, orient="horizontal")
+        self.pane.pack(fill="both", expand=True, padx=14, pady=(4, 2))
+        left = tk.Frame(self.pane, bg=self._c("bg"))
+        right = tk.Frame(self.pane, bg=self._c("bg"))
+        self.pane.add(left, weight=3)
+        self.pane.add(right, weight=2)
+        self._build_catalog_tab(left)
+        self._build_config_tab(right)
 
-        tk.Label(bar, text="Nous Free Models", bg=p["bg"], fg=p["fg"],
-                 font=("Segoe UI Semibold", 17)).pack(side="left")
-        self.info = tk.Label(bar, text="", bg=p["bg"], fg=p["dim"], font=("Segoe UI", 11))
-        self.info.pack(side="left", padx=(14, 0))
-
-        combo = ttk.Combobox(
-            bar, textvariable=self.combo_var, values=self.skins,
-            state="readonly", width=22,
-        )
-        combo.bind("<<ComboboxSelected>>", self._on_skin_select)
-        combo.pack(side="right", padx=(6, 0))
-
-        self.auto_var = tk.BooleanVar(value=False)
+    def _build_options(self):
+        row = tk.Frame(self, bg=self.palette["bg"])
+        row.pack(fill="x", padx=16, pady=(2, 0))
         ttk.Checkbutton(
-            bar, text="Auto-refresh (15 min)", variable=self.auto_var,
-            command=self._schedule_auto,
-        ).pack(side="right")
-        ttk.Button(bar, text="Copy slug", command=self.copy_selected).pack(side="right", padx=6)
-        ttk.Button(bar, text="Refresh", command=self.refresh).pack(side="right", padx=(0, 6))
+            row, text="Side by side", variable=self.split_var,
+            command=self._toggle_split,
+        ).pack(side="left")
+        ttk.Checkbutton(
+            row, text="Auto models (15 min)", variable=self.auto_models_var,
+            command=self._apply_timers,
+        ).pack(side="left", padx=(18, 0))
+        ttk.Checkbutton(
+            row, text="Deep check (4 h)", variable=self.deep_var,
+            command=self._apply_timers,
+        ).pack(side="left", padx=(18, 0))
+
+    def _toggle_split(self):
+        self.ui["split"] = bool(self.split_var.get())
+        save_ui_state(self.ui)
+        self._rebuild()
 
     def _build_catalog_tab(self, parent):
         wrap = tk.Frame(parent, bg=self._c("border"))
         wrap.pack(fill="both", expand=True, padx=0, pady=(2, 0))
 
-        self.tree = ttk.Treeview(wrap, columns=COLS, show="headings", height=13)
+        self.tree = ttk.Treeview(wrap, columns=COLS, show="headings", height=12)
         for col in COLS:
             self.tree.heading(col, text=col, anchor="w")
             self.tree.column(col, width=WIDTHS[col], anchor="w")
-        self.tree.column("Model", minwidth=220, stretch=True)
+        self.tree.column("Model", minwidth=240, stretch=True)
         self.tree.pack(side="left", fill="both", expand=True)
         self.tree.bind("<Double-1>", lambda _e: self.copy_selected())
 
@@ -205,18 +280,18 @@ class App(tk.Tk):
 
         self.usage = tk.Label(
             wrap, text="Recent API calls: ...", bg=p["bg"], fg=p["dim"],
-            font=("Segoe UI", 11), anchor="w",
+            font=(FONT, SZ_BODY), anchor="w",
         )
-        self.usage.pack(fill="x", padx=4, pady=(4, 2))
+        self.usage.pack(fill="x", padx=6, pady=(4, 2))
 
         inner = tk.Frame(wrap, bg=p["border"])
         inner.pack(fill="both", expand=True)
 
-        self.tree2 = ttk.Treeview(inner, columns=CFG_COLS, show="headings", height=11)
+        self.tree2 = ttk.Treeview(inner, columns=CFG_COLS, show="headings", height=10)
         for col in CFG_COLS:
             self.tree2.heading(col, text=col, anchor="w")
             self.tree2.column(col, width=CFG_WIDTHS[col], anchor="w")
-        self.tree2.column("Notes", minwidth=160, stretch=True)
+        self.tree2.column("Notes", minwidth=180, stretch=True)
         self.tree2.pack(side="left", fill="both", expand=True)
         self.tree2.bind("<Double-1>", lambda _e: self.copy_row(self.tree2))
 
@@ -231,30 +306,68 @@ class App(tk.Tk):
     def _build_status(self):
         self.status = tk.Label(
             self, text="Checking...", bg=self._c("bg"), fg=self._c("dim"),
-            font=("Segoe UI", 11), anchor="w",
+            font=(FONT, SZ_BODY), anchor="w",
         )
-        self.status.pack(fill="x", padx=14, pady=(0, 10))
+        self.status.pack(fill="x", padx=16, pady=(2, 12))
+
+    def show_about(self):
+        p = self.palette
+        win = tk.Toplevel(self)
+        win.title("About Nous Free Models")
+        win.configure(bg=p["bg"])
+        win.geometry("460x300")
+        win.transient(self)
+        win.grab_set()
+
+        tk.Label(win, text="Nous Free Models", bg=p["bg"], fg=p["fg"],
+                 font=("Segoe UI Semibold", 18)).pack(pady=(18, 4))
+        lines = [
+            "Live free-model catalog plus a Hermes config check.",
+            "",
+            "Built with AI assistance — Hermes Agent.",
+            "Data: Nous Portal & inference APIs (live), local Hermes config.",
+            "License: MIT (see LICENSE) · NOTICE.md",
+        ]
+        for line in lines:
+            tk.Label(win, text=line, bg=p["bg"], fg=p["dim"],
+                     font=(FONT, 12), justify="left").pack(fill="x", padx=24)
+        ttk.Button(win, text="Close", command=win.destroy).pack(pady=16)
 
     # ---------- data ----------
 
     def refresh(self):
+        self._fetch(models=True, deep=True)
+
+    def refresh_models(self):
+        self._fetch(models=True, deep=False)
+
+    def refresh_deep(self):
+        self._fetch(models=False, deep=True)
+
+    def _fetch(self, models=True, deep=True):
         if self._busy:
             return
         self._busy = True
-        self.status.configure(text="Contacting Nous Portal...", fg=self._c("dim"))
+        self.status.configure(text="Checking...", fg=self._c("dim"))
 
         def work():
-            try:
-                models, meta = nous_core.fetch_free_models()
-            except Exception as exc:  # noqa: BLE001
-                self.after(0, lambda: self._show_error(exc))
-                return
-            try:
-                cfg_rows = hermes_state.configured_models()
-                usage = hermes_state.recent_usage()
-            except Exception:
-                cfg_rows, usage = [], {"counts": {}, "fallbacks": [], "last": None}
-            self.after(0, lambda: self._show(models, meta, cfg_rows, usage))
+            models_out = None
+            meta_out = None
+            cfg_rows = []
+            usage = None
+            if models:
+                try:
+                    models_out, meta_out = nous_core.fetch_free_models()
+                except Exception as exc:  # noqa: BLE001
+                    self.after(0, lambda: self._show_error(exc))
+                    return
+            if deep:
+                try:
+                    cfg_rows = hermes_state.configured_models()
+                    usage = hermes_state.recent_usage()
+                except Exception:
+                    cfg_rows, usage = [], {"counts": {}, "fallbacks": [], "last": None}
+            self.after(0, lambda: self._show(models_out, meta_out, cfg_rows, usage))
 
         threading.Thread(target=work, daemon=True).start()
 
@@ -316,21 +429,27 @@ class App(tk.Tk):
             text += f" · fallbacks fired: {len(fallbacks)}"
         self.usage.configure(text=text)
 
+    def _status_line(self):
+        free = ""
+        if self.meta:
+            free = f" · {self.meta.get('free_count')} free of {self.meta.get('catalog_rows')}"
+        return f"Models {self.last_models} · Config {self.last_deep}{free}"
+
     def _show(self, models, meta, cfg_rows, usage):
         self._busy = False
-        self.models = models
-        self.meta = meta
-        if hasattr(self, "tree"):
-            self.tree.delete(*self.tree.get_children())
-            for model in models:
-                self._insert(model)
-        self._render_config(cfg_rows, usage)
-
-        stamp = datetime.datetime.now().strftime("%H:%M:%S")
-        self.status.configure(
-            text=f"Last checked {stamp} · {meta['free_count']} free of {meta['catalog_rows']}",
-            fg=self._c("ok"),
-        )
+        stamp = datetime.datetime.now().strftime("%H:%M")
+        if models is not None:
+            self.models = models
+            self.meta = meta
+            if hasattr(self, "tree"):
+                self.tree.delete(*self.tree.get_children())
+                for model in models:
+                    self._insert(model)
+            self.last_models = stamp
+        if usage is not None:
+            self._render_config(cfg_rows, usage)
+            self.last_deep = stamp
+        self.status.configure(text=self._status_line(), fg=self._c("ok"))
         self.info.configure(text="account: free tier")
 
     def _show_error(self, error):
@@ -352,17 +471,32 @@ class App(tk.Tk):
         if hasattr(self, "tree"):
             self.copy_row(self.tree)
 
-    def _schedule_auto(self):
-        if self._after_id:
-            self.after_cancel(self._after_id)
-            self._after_id = None
-        if self.auto_var.get():
-            self._after_id = self.after(REFRESH_MS, self._auto_tick)
+    # ---------- timers ----------
 
-    def _auto_tick(self):
-        self.refresh()
-        if self.auto_var.get():
-            self._after_id = self.after(REFRESH_MS, self._auto_tick)
+    def _apply_timers(self):
+        self.ui["auto_models"] = bool(self.auto_models_var.get())
+        self.ui["deep"] = bool(self.deep_var.get())
+        save_ui_state(self.ui)
+        if self._models_after_id:
+            self.after_cancel(self._models_after_id)
+            self._models_after_id = None
+        if self._deep_after_id:
+            self.after_cancel(self._deep_after_id)
+            self._deep_after_id = None
+        if self.auto_models_var.get():
+            self._models_after_id = self.after(MODELS_REFRESH_MS, self._models_tick)
+        if self.deep_var.get():
+            self._deep_after_id = self.after(DEEP_REFRESH_MS, self._deep_tick)
+
+    def _models_tick(self):
+        self.refresh_models()
+        if self.auto_models_var.get():
+            self._models_after_id = self.after(MODELS_REFRESH_MS, self._models_tick)
+
+    def _deep_tick(self):
+        self.refresh_deep()
+        if self.deep_var.get():
+            self._deep_after_id = self.after(DEEP_REFRESH_MS, self._deep_tick)
 
 
 if __name__ == "__main__":

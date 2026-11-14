@@ -1,11 +1,16 @@
-"""Resolve the installed Hermes skin engine into a palette for the window.
+"""Resolve the installed Hermes skin into a palette for the window.
 
-Reads whatever skin the desktop app is currently using (live), unless the user
-picked a specific skin in the app's dropdown. Falls back to a built-in dark
-palette if the Hermes source tree can't be imported.
+Two sources, in order:
+1. The Hermes CLI skin engine (`hermes_cli.skin_engine`) — what the desktop app
+   is actually using, including user skins in `<home>/skins/*.yaml`.
+2. The desktop-only presets (`apps/shared/src/theme-presets.ts`) — themes like
+   cyberpunk/midnight/ember that the desktop ships but the CLI engine lacks.
+
+Falls back to a built-in dark palette if neither is reachable.
 """
 import json
 import os
+import re
 import sys
 
 CHOICE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "theme_choice.json")
@@ -42,6 +47,8 @@ def _import_engine():
     return skin_engine
 
 
+# ---------- colour helpers ----------
+
 def _rgb(value):
     try:
         value = str(value).strip().lstrip("#")
@@ -62,7 +69,6 @@ def _lum(rgb):
 
 
 def _adjust(value, factor):
-    """factor < 1 darkens toward black, > 1 lightens toward white."""
     return _hex(tuple(c * factor for c in _rgb(value)))
 
 
@@ -70,6 +76,8 @@ def _blend(value, target, weight):
     a, b = _rgb(value), _rgb(target)
     return _hex(tuple(a[i] * (1 - weight) + b[i] * weight for i in range(3)))
 
+
+# ---------- source 1: CLI skin engine ----------
 
 def build_palette(cfg):
     colors = dict(cfg.colors)
@@ -105,6 +113,98 @@ def build_palette(cfg):
     }
 
 
+# ---------- source 2: desktop-only presets ----------
+
+_preset_cache = {"mtime": None, "palettes": {}}
+
+
+def _presets_path():
+    return os.path.join(
+        _hermes_home(), "hermes-agent", "apps", "shared", "src", "theme-presets.ts"
+    )
+
+
+def _load_presets():
+    """Parse `name: { colors: { ... } }` blocks out of theme-presets.ts."""
+    path = _presets_path()
+    try:
+        mtime = os.path.getmtime(path)
+    except OSError:
+        return {}
+    if _preset_cache["mtime"] == mtime and _preset_cache["palettes"]:
+        return _preset_cache["palettes"]
+    try:
+        with open(path, encoding="utf-8", errors="replace") as fh:
+            text = fh.read()
+    except OSError:
+        return {}
+
+    palettes = {}
+    pattern = re.compile(r"^  ([A-Za-z][A-Za-z0-9-]*):\s*\{\s*colors:\s*\{", re.M)
+    for match in pattern.finditer(text):
+        start = match.end()
+        depth, index = 1, start
+        while index < len(text) and depth:
+            char = text[index]
+            if char == "{":
+                depth += 1
+            elif char == "}":
+                depth -= 1
+            index += 1
+        block = text[start:index - 1]
+        colors = dict(re.findall(r"([A-Za-z]+):\s*'(#[0-9a-fA-F]{3,8})'", block))
+        if colors:
+            palettes[match.group(1)] = colors
+
+    _preset_cache["mtime"] = mtime
+    _preset_cache["palettes"] = palettes
+    return palettes
+
+
+def preset_names():
+    return sorted(_load_presets())
+
+
+def preset_palette(name):
+    colors = _load_presets().get(name)
+    if not colors:
+        return None
+    get = colors.get
+    bg = get("background") or get("sidebarBackground") or "#0d1117"
+    card = get("card") or _adjust(bg, 1.12)
+    accent = get("ring") or get("primary") or "#58a6ff"
+    return {
+        "bg": bg,
+        "card": card,
+        "border": get("border") or _adjust(bg, 1.25),
+        "fg": get("foreground") or get("cardForeground") or "#e6edf3",
+        "dim": get("mutedForeground") or "#8b949e",
+        "accent": accent,
+        "ok": "#3fb950",
+        "warn": "#d29922",
+        "error": get("destructive") or "#f85149",
+        "selection": get("accent") or _blend(accent, bg, 0.35),
+        "head_bg": _adjust(card, 1.12),
+        "head_fg": get("mutedForeground") or "#8b949e",
+    }
+
+
+# ---------- public API ----------
+
+def _engine_names():
+    try:
+        return {s["name"] for s in _import_engine().list_skins()}
+    except Exception:
+        return set(FALLBACK_NAMES)
+
+
+def _active_name():
+    try:
+        return _import_engine().get_active_skin_name()
+    except Exception:
+        return None
+
+
 def load_choice():
     try:
         with open(CHOICE_FILE, encoding="utf-8") as fh:
@@ -125,23 +225,41 @@ def save_choice(choice):
 
 
 def skin_names():
+    names = []
     try:
-        return [s["name"] for s in _import_engine().list_skins()]
+        names.extend(s["name"] for s in _import_engine().list_skins())
     except Exception:
-        return list(FALLBACK_NAMES)
+        names.extend(FALLBACK_NAMES)
+    for name in preset_names():
+        if name not in names:
+            names.append(name)
+    return names
 
 
 def resolve(choice=None):
     """Return (palette, meta)."""
+    choice = choice or load_choice()
+    override = choice.get("mode") == "skin"
+    name = choice.get("name") if override else _active_name()
+    engine_names = _engine_names()
+
+    if name and name in engine_names:
+        try:
+            cfg = _import_engine().load_skin(name)
+            return build_palette(cfg), {"source": "engine", "skin": cfg.name}
+        except Exception:
+            pass
+
+    if name:
+        palette = preset_palette(name)
+        if palette:
+            return palette, {"source": "preset", "skin": name}
+
+    if override:
+        return dict(FALLBACK_PALETTE), {"source": "fallback", "skin": name or "?"}
+
     try:
-        engine = _import_engine()
+        cfg = _import_engine().get_active_skin()
+        return build_palette(cfg), {"source": "engine", "skin": cfg.name}
     except Exception:
         return dict(FALLBACK_PALETTE), {"source": "fallback", "skin": "n/a"}
-
-    choice = choice or load_choice()
-    name = choice.get("name") if choice.get("mode") == "skin" else None
-    try:
-        cfg = engine.load_skin(name) if name else engine.get_active_skin()
-    except Exception:
-        return dict(FALLBACK_PALETTE), {"source": "fallback", "skin": name or "auto"}
-    return build_palette(cfg), {"source": "engine", "skin": cfg.name}
