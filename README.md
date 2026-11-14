@@ -30,4 +30,14 @@ an auth error, re-login to the Portal through Hermes (`hermes setup`) and try ag
 |---|---|
 | `app.pyw` | The tkinter window |
 | `nous_core.py` | Auth lookup + the two API calls + union logic |
+| `theme.py` | Resolves the installed Hermes skin into the app palette, loads/saves the override choice |
 | `run.ps1` / `run.cmd` | Launchers that find a Python automatically |
+
+## Themes
+
+The window follows whatever skin the desktop Hermes app is using (`display.skin`),
+refreshed every ~3 s, so `/skin slate` repaints this window too. To pin a skin
+instead of following, pick it from the dropdown (left of the checkbox); the choice
+is stored in `theme_choice.json` next to the script and survives restarts. Light
+skins such as `daylight` flip the whole window to a light palette. If the Hermes
+source tree can't be imported, the app falls back to its own dark palette.

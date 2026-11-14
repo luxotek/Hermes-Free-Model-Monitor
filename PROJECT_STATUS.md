@@ -2,12 +2,12 @@
 
 Last updated: 2026-11-13
 
-Current stage: **0 complete, starting 1**
+Current stage: **1 complete, starting 2**
 
 ## Roadmap
 
 - [x] 0. Safety net — git repo, status file, `.gitignore`
-- [ ] 1. Theme follow (Hermes skin engine) + manual override picker
+- [x] 1. Theme follow (Hermes skin engine) + manual override picker
 - [ ] 2. Config vs available comparison (default, aux pins, fallback chain, actual usage)
 - [ ] 3. Alerts + model actions (death notices, set main model, copy slug, session hint)
 - [ ] 4. Stealth watch (log-mined watchlist, liveness probes, 429 `alternates` discovery)
@@ -24,8 +24,9 @@ Current stage: **0 complete, starting 1**
 
 ## Next steps
 
-1. Stage 1: palette object, skin-engine import with fallback, toolbar skin dropdown,
-   re-apply on change. Verify with screenshot against the `default` gold skin.
+1. Stage 2: read configured models (`model.default`, `auxiliary.*`, `fallback_providers`)
+   via `hermes config get`, compare against the live free union, flag dead/paid,
+   and show observed per-turn usage from `logs/agent.log`.
 
 ## Open questions
 

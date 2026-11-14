@@ -1,91 +1,166 @@
 #!/usr/bin/env python3w
-"""Nous Free Models - a tiny dark window showing your live free-tier catalog."""
+"""Nous Free Models - tiny window that follows the installed Hermes skin."""
 import datetime
 import threading
 import tkinter as tk
 from tkinter import ttk
 
 import nous_core
+import theme
 
-BG = "#0d1117"
-CARD = "#161b22"
-FG = "#e6edf3"
-DIM = "#8b949e"
-ACCENT = "#58a6ff"
-GREEN = "#3fb950"
-RED = "#f85149"
-BORDER = "#30363d"
-
-REFRESH_MS = 15 * 60 * 1000
 COLS = ("Model", "Context", "Inputs", "Price", "Flags", "Source")
 WIDTHS = {"Model": 320, "Context": 95, "Inputs": 140, "Price": 90, "Flags": 190, "Source": 110}
+REFRESH_MS = 15 * 60 * 1000
+POLL_MS = 3000
 
 
 class App(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("Nous Free Models")
-        self.geometry("960x440")
-        self.minsize(760, 320)
-        self.configure(bg=BG)
+        self.geometry("980x470")
+        self.minsize(780, 330)
         self.models = []
+        self.palette = dict(theme.FALLBACK_PALETTE)
+        self.meta = {}
+        self.choice = theme.load_choice()
+        self.skins = ["Auto (follow Hermes)"] + theme.skin_names()
         self._busy = False
         self._after_id = None
+        self._poll_id = None
+        self.combo_var = tk.StringVar()
 
+        palette, meta = theme.resolve(self.choice)
+        self.palette, self.meta = palette, meta
+        self.configure(bg=self.palette["bg"])
         self._style()
-        self._build_toolbar()
-        self._build_tree()
-        self._build_status()
+        self._build_ui()
+        self._sync_combo()
         self.after(200, self.refresh)
+        self._schedule_poll()
+
+    # ---------- theming ----------
+
+    def _c(self, key):
+        return self.palette.get(key, theme.FALLBACK_PALETTE[key])
 
     def _style(self):
+        p = self.palette
         style = ttk.Style(self)
         style.theme_use("clam")
         style.configure(
-            "Treeview",
-            background=CARD,
-            foreground=FG,
-            fieldbackground=CARD,
-            borderwidth=0,
-            rowheight=26,
+            "Treeview", background=p["card"], foreground=p["fg"],
+            fieldbackground=p["card"], borderwidth=0, rowheight=26,
             font=("Segoe UI", 10),
         )
         style.configure(
-            "Treeview.Heading",
-            background="#21262d",
-            foreground=DIM,
-            relief="flat",
-            font=("Segoe UI Semibold", 9),
-            padding=(6, 4),
+            "Treeview.Heading", background=p["head_bg"], foreground=p["head_fg"],
+            relief="flat", font=("Segoe UI Semibold", 9), padding=(6, 4),
         )
-        style.map("Treeview", background=[("selected", "#1f6feb")], foreground=[("selected", FG)])
-        style.configure("TButton", background="#21262d", foreground=FG, borderwidth=0, padding=6)
-        style.map("TButton", background=[("active", "#2d333b")])
-        style.configure("TCheckbutton", background=BG, foreground=DIM, font=("Segoe UI", 9))
-        style.configure("Vertical.TScrollbar", background="#21262d", troughcolor=BG, borderwidth=0)
+        style.map(
+            "Treeview",
+            background=[("selected", p["selection"])],
+            foreground=[("selected", p["fg"])],
+        )
+        style.configure("TButton", background=p["head_bg"], foreground=p["fg"], borderwidth=0, padding=6)
+        style.map("TButton", background=[("active", p["border"])])
+        style.configure("TCheckbutton", background=p["bg"], foreground=p["dim"], font=("Segoe UI", 9))
+        style.map("TCheckbutton", background=[("active", p["bg"])])
+        style.configure("Vertical.TScrollbar", background=p["head_bg"], troughcolor=p["bg"], borderwidth=0)
+        style.configure(
+            "TCombobox", fieldbackground=p["card"], background=p["head_bg"],
+            foreground=p["fg"], arrowcolor=p["fg"],
+        )
+        style.map("TCombobox", fieldbackground=[("readonly", p["card"])], foreground=[("readonly", p["fg"])])
+
+    def apply_theme(self, palette, meta=None):
+        self.palette = palette
+        if meta is not None:
+            self.meta = meta
+        self.configure(bg=self.palette["bg"])
+        self._style()
+        self._build_ui()
+        self._sync_combo()
+        for model in self.models:
+            self._insert(model)
+
+    def _sync_combo(self):
+        label = "Auto (follow Hermes)"
+        if self.choice.get("mode") == "skin":
+            label = self.choice.get("name", label)
+        self.combo_var.set(label)
+
+    def _on_skin_select(self, _event=None):
+        picked = self.combo_var.get()
+        choice = (
+            {"mode": "auto"}
+            if picked.startswith("Auto")
+            else {"mode": "skin", "name": picked}
+        )
+        if choice == self.choice:
+            return
+        self.choice = choice
+        theme.save_choice(choice)
+        self.after(20, self._reload_theme)
+
+    def _reload_theme(self):
+        palette, meta = theme.resolve(self.choice)
+        self.apply_theme(palette, meta)
+        source = self.meta.get("source", "?")
+        skin = self.meta.get("skin", "?")
+        self.status.configure(
+            text=f"Theme: {skin} ({'live' if source == 'engine' else source})",
+            fg=self._c("dim"),
+        )
+
+    def _schedule_poll(self):
+        if self._poll_id:
+            self.after_cancel(self._poll_id)
+        self._poll_id = self.after(POLL_MS, self._poll_tick)
+
+    def _poll_tick(self):
+        if self.choice.get("mode") == "auto":
+            palette, meta = theme.resolve(self.choice)
+            if palette != self.palette:
+                self.apply_theme(palette, meta)
+        self._schedule_poll()
+
+    # ---------- ui ----------
+
+    def _build_ui(self):
+        for widget in self.winfo_children():
+            widget.destroy()
+        self._build_toolbar()
+        self._build_tree()
+        self._build_status()
 
     def _build_toolbar(self):
-        bar = tk.Frame(self, bg=BG)
+        p = self.palette
+        bar = tk.Frame(self, bg=p["bg"])
         bar.pack(fill="x", padx=12, pady=(12, 4))
 
-        tk.Label(
-            bar, text="Nous Free Models", bg=BG, fg=FG, font=("Segoe UI Semibold", 14)
-        ).pack(side="left")
-
-        self.info = tk.Label(bar, text="", bg=BG, fg=DIM, font=("Segoe UI", 9))
+        tk.Label(bar, text="Nous Free Models", bg=p["bg"], fg=p["fg"],
+                 font=("Segoe UI Semibold", 14)).pack(side="left")
+        self.info = tk.Label(bar, text="", bg=p["bg"], fg=p["dim"], font=("Segoe UI", 9))
         self.info.pack(side="left", padx=(14, 0))
+
+        combo = ttk.Combobox(
+            bar, textvariable=self.combo_var, values=self.skins,
+            state="readonly", width=22,
+        )
+        combo.bind("<<ComboboxSelected>>", self._on_skin_select)
+        combo.pack(side="right", padx=(6, 0))
 
         self.auto_var = tk.BooleanVar(value=False)
         ttk.Checkbutton(
             bar, text="Auto-refresh (15 min)", variable=self.auto_var,
             command=self._schedule_auto,
         ).pack(side="right")
-
         ttk.Button(bar, text="Copy slug", command=self.copy_selected).pack(side="right", padx=6)
         ttk.Button(bar, text="Refresh", command=self.refresh).pack(side="right", padx=(0, 6))
 
     def _build_tree(self):
-        wrap = tk.Frame(self, bg=BORDER)
+        wrap = tk.Frame(self, bg=self._c("border"))
         wrap.pack(fill="both", expand=True, padx=12, pady=(6, 4))
 
         self.tree = ttk.Treeview(wrap, columns=COLS, show="headings", height=14)
@@ -102,15 +177,18 @@ class App(tk.Tk):
 
     def _build_status(self):
         self.status = tk.Label(
-            self, text="Checking...", bg=BG, fg=DIM, font=("Segoe UI", 9), anchor="w"
+            self, text="Checking...", bg=self._c("bg"), fg=self._c("dim"),
+            font=("Segoe UI", 9), anchor="w",
         )
         self.status.pack(fill="x", padx=14, pady=(0, 10))
+
+    # ---------- data ----------
 
     def refresh(self):
         if self._busy:
             return
         self._busy = True
-        self.status.configure(text="Contacting Nous Portal...", fg=DIM)
+        self.status.configure(text="Contacting Nous Portal...", fg=self._c("dim"))
 
         def work():
             try:
@@ -121,51 +199,57 @@ class App(tk.Tk):
 
         threading.Thread(target=work, daemon=True).start()
 
+    def _insert(self, model):
+        flags = []
+        if model["vision"]:
+            flags.append("vision")
+        if model["video"]:
+            flags.append("video")
+        if model["compaction"]:
+            flags.append("compaction")
+        ctx = model["context"]
+        self.tree.insert(
+            "", "end",
+            values=(
+                model["name"],
+                f"{ctx:,}" if ctx else "?",
+                model["inputs"],
+                "$0.00 / 1M",
+                ", ".join(flags) or "-",
+                model["source"],
+            ),
+        )
+
     def _show(self, models, meta, error):
         self._busy = False
         self.models = models
-        self.tree.delete(*self.tree.get_children())
+        if hasattr(self, "tree"):
+            self.tree.delete(*self.tree.get_children())
+            for model in models:
+                self._insert(model)
 
         if error is not None:
-            self.status.configure(text=f"Error: {error}", fg=RED)
+            self.status.configure(text=f"Error: {error}", fg=self._c("error"))
             self.info.configure(text="")
             return
 
-        for model in models:
-            flags = []
-            if model["vision"]:
-                flags.append("vision")
-            if model["video"]:
-                flags.append("video")
-            if model["compaction"]:
-                flags.append("compaction")
-            ctx = model["context"]
-            self.tree.insert(
-                "", "end",
-                values=(
-                    model["name"],
-                    f"{ctx:,}" if ctx else "?",
-                    model["inputs"],
-                    "$0.00 / 1M",
-                    ", ".join(flags) or "-",
-                    model["source"],
-                ),
-            )
-
         stamp = datetime.datetime.now().strftime("%H:%M:%S")
-        self.status.configure(text=f"Last checked {stamp} · account: free tier", fg=GREEN)
-        self.info.configure(
-            text=f"{meta['free_count']} of {meta['catalog_rows']} catalog models are free"
+        self.status.configure(
+            text=f"Last checked {stamp} · {meta['free_count']} free of {meta['catalog_rows']}",
+            fg=self._c("ok"),
         )
+        self.info.configure(text="account: free tier")
 
     def copy_selected(self):
+        if not hasattr(self, "tree"):
+            return
         sel = self.tree.selection()
         if not sel:
             return
         slug = self.tree.item(sel[0])["values"][0]
         self.clipboard_clear()
         self.clipboard_append(slug)
-        self.status.configure(text=f"Copied: {slug}", fg=ACCENT)
+        self.status.configure(text=f"Copied: {slug}", fg=self._c("accent"))
 
     def _schedule_auto(self):
         if self._after_id:
