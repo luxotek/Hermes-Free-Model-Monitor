@@ -184,7 +184,12 @@ class App(tk.Tk):
         label = "Auto (follow Hermes)"
         if self.choice.get("mode") == "skin":
             label = self.choice.get("name", label)
-        self.combo_var.set(label)
+        else:
+            followed = theme.desktop_theme_name() or theme._active_name()
+            if followed:
+                label = f"Auto ({followed})"
+        if self.combo_var.get() != label:
+            self.combo_var.set(label)
 
     def _on_skin_select(self, _event=None):
         picked = self.combo_var.get()
@@ -216,6 +221,7 @@ class App(tk.Tk):
             palette, meta = theme.resolve(self.choice)
             if palette != self.palette:
                 self.apply_theme(palette, meta)
+            self._sync_combo()
         self._schedule_poll()
 
     # ---------- ui ----------

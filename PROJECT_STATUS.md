@@ -76,6 +76,17 @@ Remote: **https://github.com/luxotek/herms-free-mode** (pushed)
 - About text trimmed to end at "redistribution."; LICENSE and NOTICE.md are
   clickable links in Settings (open local file, fall back to the GitHub page).
 
+## Theme follow + contrast fix (2026-11-14)
+- Root cause of "themes aren't following": the desktop app stores its theme in
+  `%LOCALAPPDATA%\hermes\ui-preferences.json` (`hermes-desktop-theme-v2`), while the
+  monitor was reading the CLI config (`display.skin`), which the desktop does not
+  update live. Auto mode now prefers the desktop's stored theme, then falls back to
+  the CLI skin engine; the dropdown shows what is followed (`Auto (cyberpunk)`).
+- Some presets looked washed out on their own (everforest/catppuccin/daylight/
+  warm-lightmode had card≈bg or dim text at <2:1 contrast). Palettes are now
+  normalised: fg ≥ 4.5:1, dim ≥ 3:1, accent ≥ 3:1 vs background, card fill pushed
+  away from the page background (≥1.18:1), selection guaranteed distinguishable.
+
 ## Scrollbar fix (2026-11-14)
 - Vertical + horizontal scrollbars were always packed, so they appeared even when
   the table had few rows (and overlapped notification bubbles).

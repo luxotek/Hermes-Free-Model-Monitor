@@ -58,14 +58,21 @@ Double-click **`run.ps1`** (right-click > Run with PowerShell) or **`run.cmd`**.
 The window follows whatever skin the desktop Hermes app is using, repolled every
 ~3 s, so `/skin slate` repaints this window too. Sources, in order:
 
+- the desktop app's own theme choice (`%LOCALAPPDATA%\hermes\ui-preferences.json`,
+  key `hermes-desktop-theme-v2`) — this is what the desktop actually uses,
+  including themes like cyberpunk that the CLI config doesn't know about,
 - the Hermes skin engine (default, ares, mono, slate, daylight, warm-lightmode,
   poseidon, sisyphus, charizard, plus any user skins in `%LOCALAPPDATA%\hermes\skins`),
 - the desktop-only presets the CLI engine doesn't expose (cyberpunk, midnight,
   ember, nous, github, catppuccin, everforest, solarized).
 
-Pick a specific skin from the dropdown to pin it instead of following; the choice
-is stored in `theme_choice.json`. Light skins flip the whole window to a light
-palette. If neither source resolves, a built-in dark palette is used.
+The dropdown shows the followed theme while in Auto mode (e.g. `Auto (cyberpunk)`);
+changes apply within one poll (~3 s), no restart needed. Picking a specific theme
+from the dropdown pins it instead of following (stored in `theme_choice.json`).
+Palette roles are normalised for contrast (text, dim labels, accents, and panel
+fills are nudged until they clear minimum contrast against the background), so
+light and dark presets both read correctly. If neither source resolves, a
+built-in dark palette is used.
 
 ## AI notice & license
 

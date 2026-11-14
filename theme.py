@@ -77,6 +77,35 @@ def _blend(value, target, weight):
     return _hex(tuple(a[i] * (1 - weight) + b[i] * weight for i in range(3)))
 
 
+def _contrast(a, b):
+    la, lb = _lum(_rgb(a)), _lum(_rgb(b))
+    hi, lo = max(la, lb), min(la, lb)
+    return (hi + 0.05) / (lo + 0.05)
+
+
+def _ensure(color, bg, minimum, dark_bg):
+    """Step a colour toward white/black until it clears `minimum` against bg."""
+    c = color
+    factor = 1.14 if dark_bg else 0.88
+    for _ in range(32):
+        if _contrast(c, bg) >= minimum:
+            return c
+        c = _adjust(c, factor)
+    return c
+
+
+def _separate(value, bg, minimum=1.18):
+    """Push a fill colour away from the page background enough to read as a panel."""
+    dark_bg = _lum(_rgb(bg)) <= 0.45
+    c = value
+    factor = 1.22 if dark_bg else 0.82
+    for _ in range(32):
+        if _contrast(c, bg) >= minimum:
+            return c
+        c = _adjust(c, factor)
+    return c
+
+
 # ---------- source 1: CLI skin engine ----------
 
 def build_palette(cfg):
@@ -92,22 +121,35 @@ def build_palette(cfg):
     get = merged.get
 
     bg = get("background") or _adjust(get("status_bar_bg") or probe, 0.82 if not light else 1.05)
-    card = get("completion_menu_bg") or get("status_bar_bg") or _adjust(bg, 1.15 if not light else 0.92)
-    accent = get("ui_accent") or get("banner_accent") or "#58a6ff"
-    dim = get("status_bar_dim") or get("banner_dim") or "#8b949e"
-    border = get("session_border") or get("input_rule") or get("banner_border") or "#30363d"
+    card = _separate(
+        get("completion_menu_bg") or get("status_bar_bg") or _adjust(bg, 1.15 if not light else 0.92),
+        bg, 1.18,
+    )
+    accent = _ensure(get("ui_accent") or get("banner_accent") or "#58a6ff", bg, 3.0, not light)
+    dim = _ensure(get("status_bar_dim") or get("banner_dim") or "#8b949e", bg, 3.0, not light)
+    border = _ensure(
+        get("session_border") or get("input_rule") or get("banner_border") or "#30363d",
+        bg, 1.3, not light,
+    )
+    fg = _ensure(
+        get("banner_text") or get("ui_text") or get("status_bar_text") or "#e6edf3",
+        bg, 4.5, not light,
+    )
+    selection = get("selection_bg") or _blend(accent, bg, 0.35)
+    if _contrast(selection, bg) < 1.2:
+        selection = _blend(accent, bg, 0.45 if not light else 0.30)
 
     return {
         "bg": bg,
         "card": card,
         "border": border,
-        "fg": get("banner_text") or get("ui_text") or get("status_bar_text") or "#e6edf3",
+        "fg": fg,
         "dim": dim,
         "accent": accent,
         "ok": get("ui_ok") or "#3fb950",
         "warn": get("ui_warn") or "#d29922",
         "error": get("ui_error") or "#f85149",
-        "selection": get("selection_bg") or _blend(accent, bg, 0.35),
+        "selection": selection,
         "head_bg": _adjust(card, 1.12 if not light else 0.96),
         "head_fg": dim,
     }
@@ -171,21 +213,28 @@ def preset_palette(name):
         return None
     get = colors.get
     bg = get("background") or get("sidebarBackground") or "#0d1117"
-    card = get("card") or _adjust(bg, 1.12)
-    accent = get("ring") or get("primary") or "#58a6ff"
+    dark_bg = _lum(_rgb(bg)) <= 0.45
+    card = _separate(get("card") or _adjust(bg, 1.12), bg, 1.18)
+    accent = _ensure(get("ring") or get("primary") or "#58a6ff", bg, 3.0, dark_bg)
+    fg = _ensure(get("foreground") or get("cardForeground") or "#e6edf3", bg, 4.5, dark_bg)
+    dim = _ensure(get("mutedForeground") or "#8b949e", bg, 3.0, dark_bg)
+    border = _ensure(get("border") or _adjust(bg, 1.25), bg, 1.3, dark_bg)
+    selection = get("accent") or _blend(accent, bg, 0.35)
+    if _contrast(selection, bg) < 1.2:
+        selection = _blend(accent, bg, 0.45 if dark_bg else 0.30)
     return {
         "bg": bg,
         "card": card,
-        "border": get("border") or _adjust(bg, 1.25),
-        "fg": get("foreground") or get("cardForeground") or "#e6edf3",
-        "dim": get("mutedForeground") or "#8b949e",
+        "border": border,
+        "fg": fg,
+        "dim": dim,
         "accent": accent,
         "ok": "#3fb950",
         "warn": "#d29922",
         "error": get("destructive") or "#f85149",
-        "selection": get("accent") or _blend(accent, bg, 0.35),
+        "selection": selection,
         "head_bg": _adjust(card, 1.12),
-        "head_fg": get("mutedForeground") or "#8b949e",
+        "head_fg": dim,
     }
 
 
@@ -203,6 +252,24 @@ def _active_name():
         return _import_engine().get_active_skin_name()
     except Exception:
         return None
+
+
+def desktop_theme_name():
+    """Theme selected in the Hermes desktop app (ui-preferences.json).
+
+    The desktop writes its choice here; the CLI config (`display.skin`) is not
+    updated live, so this is the source of truth for following the app.
+    """
+    path = os.path.join(_hermes_home(), "ui-preferences.json")
+    try:
+        with open(path, encoding="utf-8") as fh:
+            data = json.load(fh)
+    except (OSError, ValueError):
+        return None
+    value = (data.get("values") or {}).get("hermes-desktop-theme-v2")
+    if isinstance(value, str) and value.strip():
+        return value.strip()
+    return None
 
 
 def load_choice():
@@ -240,7 +307,11 @@ def resolve(choice=None):
     """Return (palette, meta)."""
     choice = choice or load_choice()
     override = choice.get("mode") == "skin"
-    name = choice.get("name") if override else _active_name()
+    if override:
+        name = choice.get("name")
+    else:
+        # Follow the desktop app first; fall back to whatever the CLI reports.
+        name = desktop_theme_name() or _active_name()
     engine_names = _engine_names()
 
     if name and name in engine_names:
