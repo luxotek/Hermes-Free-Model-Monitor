@@ -76,6 +76,13 @@ Remote: **https://github.com/luxotek/herms-free-mode** (pushed)
 - About text trimmed to end at "redistribution."; LICENSE and NOTICE.md are
   clickable links in Settings (open local file, fall back to the GitHub page).
 
+## Scrollbar fix (2026-11-14)
+- Vertical + horizontal scrollbars were always packed, so they appeared even when
+  the table had few rows (and overlapped notification bubbles).
+- Both now sync against real overflow (row count / column sum vs viewport) after
+  renders, on `<Configure>`, and via a 2 s self-correcting tick. Container frames
+  use the page background so no seam sits next to a scrollbar.
+
 ## Enhancements landed (post stage 2)
 
 - Second font/accessibility bump across all widgets (title 20, body 13, tree 14, head 13, roomier rows).
