@@ -42,6 +42,22 @@ Remote: **https://github.com/luxotek/herms-free-mode** (pushed)
 - Verified live: startup alert for `fallback #2` raised both the alert bar, history entry,
   and a bubble that auto-dismissed; split/tab rebuild stays clean.
 
+## Stage 5 follow-ups (2026-11-14)
+- Split/side-by-side mode removed (3 panes do not fit typical monitors); tabs + a bottom
+  master-detail panel instead.
+- Detail panel: selecting any row (all three tabs) shows its full info stacked vertically.
+- Responsive columns: each tab hides low-priority columns below width thresholds
+  (catalog Price<1000 / Flags<1200 / Source<1400; config Provider<950 / Notes<1250;
+  stealth Mentions<800 / Last seen<1000 / Origin<1250 / Detail<1450).
+- Default window size adapts to the screen (78% width capped 1400 px, 85% height capped
+  860 px), centered at launch.
+- Font bump across status strip, history, alerts, usage line, detail panel (SZ_INFO = 14);
+  bubbles widened to 420 px with 14–15 pt text.
+- LICENSE replaced: MIT → source-available, personal use only — no sale or redistribution
+  without express written permission from luxotek; credit + AI notice required (NOTICE.md).
+  About dialog updated (credit line, terms, centered over parent, non-resizable, Esc closes).
+- Start Menu shortcut created: "Nous Free Models.lnk" → project venv pythonw + app.pyw.
+
 ## Enhancements landed (post stage 2)
 
 - Second font/accessibility bump across all widgets (title 20, body 13, tree 14, head 13, roomier rows).
@@ -51,7 +67,7 @@ Remote: **https://github.com/luxotek/herms-free-mode** (pushed)
   per-half freshness ("Models HH:MM · Config HH:MM").
 - Desktop preset themes exposed in the dropdown (cyberpunk, midnight, ember, nous, github,
   catppuccin, everforest, solarized) parsed live from `apps/shared/src/theme-presets.ts`.
-- About dialog + MIT LICENSE + NOTICE.md (AI-assistance notice).
+- About dialog + source-available LICENSE + NOTICE.md (AI-assistance notice).
 
 ## Decisions
 

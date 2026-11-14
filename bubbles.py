@@ -2,7 +2,7 @@
 import tkinter as tk
 
 GAP = 10
-WIDTH = 340
+WIDTH = 420
 LEVEL_COLORS = ("critical", "warn", "ok", "info")
 TIMEOUTS = {"critical": 9000, "warn": 7000}
 
@@ -41,29 +41,29 @@ class BubbleStack:
         card = tk.Frame(win, bg=pal["card"])
         card.pack(fill="both", expand=True, padx=1, pady=1)
 
-        edge = tk.Frame(card, bg=color, width=4)
+        edge = tk.Frame(card, bg=color, width=5)
         edge.pack(side="left", fill="y")
 
         inner = tk.Frame(card, bg=pal["card"])
-        inner.pack(side="left", fill="both", expand=True, padx=(10, 8), pady=(7, 7))
+        inner.pack(side="left", fill="both", expand=True, padx=(14, 10), pady=(10, 10))
 
         head = tk.Frame(inner, bg=pal["card"])
         head.pack(fill="x")
         tk.Label(
             head, text=title, bg=pal["card"], fg=pal["fg"],
-            font=("Segoe UI Semibold", 11), anchor="w",
+            font=("Segoe UI Semibold", 15), anchor="w",
         ).pack(side="left", fill="x", expand=True)
         close = tk.Label(
             head, text="✕", bg=pal["card"], fg=pal["dim"],
-            font=("Segoe UI", 10), cursor="hand2",
+            font=("Segoe UI", 13), cursor="hand2",
         )
         close.pack(side="right")
 
         tk.Label(
             inner, text=message, bg=pal["card"], fg=pal["dim"],
-            font=("Segoe UI", 10), justify="left", anchor="w",
-            wraplength=WIDTH - 44,
-        ).pack(fill="x", pady=(2, 0))
+            font=("Segoe UI", 14), justify="left", anchor="w",
+            wraplength=WIDTH - 56,
+        ).pack(fill="x", pady=(3, 0))
 
         for widget in (win, card, edge, inner, head, close):
             widget.bind("<Button-1>", lambda _e, w=win: self.close(w))

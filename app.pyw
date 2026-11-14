@@ -25,6 +25,17 @@ COLS = ("Model", "Context", "Inputs", "Price", "Flags", "Source")
 WIDTHS = {"Model": 360, "Context": 110, "Inputs": 160, "Price": 100, "Flags": 210, "Source": 120}
 CFG_COLS = ("Role", "Model", "Provider", "Status", "Notes")
 CFG_WIDTHS = {"Role": 190, "Model": 340, "Provider": 90, "Status": 100, "Notes": 260}
+STEALTH_COLS = ("Model", "Mentions", "Last seen", "Origin", "State", "Detail")
+STEALTH_WIDTHS = {"Model": 260, "Mentions": 90, "Last seen": 170, "Origin": 120, "State": 120, "Detail": 260}
+
+SZ_INFO = 14
+
+# columns hidden below these window widths (keeps narrow monitors readable)
+RESPONSIVE = {
+    "tree": [("Price", 1000), ("Flags", 1200), ("Source", 1400)],
+    "tree2": [("Provider", 950), ("Notes", 1250)],
+    "tree3": [("Mentions", 800), ("Last seen", 1000), ("Origin", 1250), ("Detail", 1450)],
+}
 
 MODELS_REFRESH_MS = 15 * 60 * 1000
 DEEP_REFRESH_MS = 4 * 60 * 60 * 1000
@@ -56,7 +67,11 @@ class App(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("Nous Free Models")
-        self.geometry("1180x700")
+        screen_w = self.winfo_screenwidth()
+        screen_h = self.winfo_screenheight()
+        width = max(1100, min(int(screen_w * 0.78), 1400))
+        height = max(640, min(int(screen_h * 0.85), 860))
+        self.geometry(f"{width}x{height}+{(screen_w - width) // 2}+{max((screen_h - height) // 2, 0)}")
         self.minsize(960, 540)
         self.models = []
         self.cfg_rows = []
@@ -88,7 +103,6 @@ class App(tk.Tk):
         self._deep_after_id = None
         self._poll_id = None
         self.combo_var = tk.StringVar()
-        self.split_var = tk.BooleanVar(value=bool(self.ui.get("split")))
         self.auto_models_var = tk.BooleanVar(value=bool(self.ui.get("auto_models")))
         self.deep_var = tk.BooleanVar(value=bool(self.ui.get("deep")))
 
@@ -99,6 +113,7 @@ class App(tk.Tk):
         self.bubbles = bubbles.BubbleStack(
             self, lambda: self.palette, lambda: bool(self.bubbles_var.get())
         )
+        self.bind("<Configure>", self._apply_responsive_columns, add="+")
         self._build_ui()
         self._sync_combo()
         self.after(200, self.refresh)
@@ -133,7 +148,7 @@ class App(tk.Tk):
         )
         style.configure("TButton", background=p["head_bg"], foreground=p["fg"], borderwidth=0, padding=12)
         style.map("TButton", background=[("active", p["border"])])
-        style.configure("TCheckbutton", background=p["bg"], foreground=p["dim"], font=(FONT, SZ_BODY))
+        style.configure("TCheckbutton", background=p["bg"], foreground=p["dim"], font=(FONT, SZ_INFO))
         style.map("TCheckbutton", background=[("active", p["bg"])])
         style.configure("Vertical.TScrollbar", background=p["head_bg"], troughcolor=p["bg"], borderwidth=0)
         style.configure(
@@ -165,6 +180,7 @@ class App(tk.Tk):
         self._render_config(self.cfg_rows, self.usage_data)
         if hasattr(self, "tree3"):
             self._render_stealth()
+        self._apply_responsive_columns()
 
     def _sync_combo(self):
         label = "Auto (follow Hermes)"
@@ -214,10 +230,8 @@ class App(tk.Tk):
             widget.destroy()
         self._build_toolbar()
         self._build_info_strip()
-        if self.split_var.get():
-            self._build_split()
-        else:
-            self._build_notebook()
+        self._build_notebook()
+        self._build_detail_panel()
         self._build_options()
         self._build_status()
         self._build_alerts_bar()
@@ -229,7 +243,7 @@ class App(tk.Tk):
 
         tk.Label(bar, text="Nous Free Models", bg=p["bg"], fg=p["fg"],
                  font=("Segoe UI Semibold", SZ_TITLE)).pack(side="left")
-        self.info = tk.Label(bar, text="", bg=p["bg"], fg=p["dim"], font=(FONT, SZ_BODY))
+        self.info = tk.Label(bar, text="", bg=p["bg"], fg=p["dim"], font=(FONT, SZ_INFO))
         self.info.pack(side="left", padx=(16, 0))
 
         combo = ttk.Combobox(
@@ -257,7 +271,7 @@ class App(tk.Tk):
             strip = tk.Frame(container, bg=color)
             strip.pack(fill="x", padx=10, pady=6)
             tk.Label(
-                strip, text=alert["text"], bg=color, fg=p["bg"], font=(FONT, SZ_BODY),
+                strip, text=alert["text"], bg=color, fg=p["bg"], font=(FONT, SZ_INFO),
                 anchor="w", padx=10, pady=6,
             ).pack(side="left", fill="x", expand=True)
             ttk.Button(strip, text="Dismiss", command=lambda idx=index: self._dismiss_alert(idx)).pack(
@@ -278,29 +292,29 @@ class App(tk.Tk):
         self._build_stealth_tab(tab_stealth)
         self.tree.bind("<<TreeviewSelect>>", self._on_tree_select)
         self.tree2.bind("<<TreeviewSelect>>", self._on_tree_select)
+        self.tree3.bind("<<TreeviewSelect>>", self._on_tree_select)
 
-    def _build_split(self):
-        self.pane = ttk.Panedwindow(self, orient="horizontal")
-        self.pane.pack(fill="both", expand=True, padx=14, pady=(4, 2))
-        left = tk.Frame(self.pane, bg=self._c("bg"))
-        right = tk.Frame(self.pane, bg=self._c("bg"))
-        third = tk.Frame(self.pane, bg=self._c("bg"))
-        self.pane.add(left, weight=3)
-        self.pane.add(right, weight=2)
-        self.pane.add(third, weight=2)
-        self._build_catalog_tab(left)
-        self._build_config_tab(right)
-        self._build_stealth_tab(third)
-        self.tree.bind("<<TreeviewSelect>>", self._on_tree_select)
-        self.tree2.bind("<<TreeviewSelect>>", self._on_tree_select)
+    def _build_detail_panel(self):
+        p = self.palette
+        wrap = tk.Frame(self, bg=p["border"])
+        wrap.pack(fill="x", padx=14, pady=(2, 2))
+        inner = tk.Frame(wrap, bg=p["card"])
+        inner.pack(fill="x")
+        self.detail_title = tk.Label(
+            inner, text="Select a row to see its full details.",
+            bg=p["card"], fg=p["dim"], font=("Segoe UI Semibold", SZ_INFO),
+            anchor="w", padx=12, pady=8,
+        )
+        self.detail_title.pack(fill="x")
+        self.detail_chips = tk.Label(
+            inner, text="", bg=p["card"], fg=p["fg"], font=(FONT, SZ_INFO),
+            anchor="w", justify="left", padx=12, pady=4,
+        )
+        self.detail_chips.pack(fill="x")
 
     def _build_options(self):
         row = tk.Frame(self, bg=self.palette["bg"])
         row.pack(fill="x", padx=16, pady=(2, 0))
-        ttk.Checkbutton(
-            row, text="Side by side", variable=self.split_var,
-            command=self._toggle_split,
-        ).pack(side="left")
         ttk.Checkbutton(
             row, text="Auto models (15 min)", variable=self.auto_models_var,
             command=self._apply_timers,
@@ -313,11 +327,6 @@ class App(tk.Tk):
             row, text="Bubbles", variable=self.bubbles_var,
             command=self._apply_timers,
         ).pack(side="left", padx=(18, 0))
-
-    def _toggle_split(self):
-        self.ui["split"] = bool(self.split_var.get())
-        save_ui_state(self.ui)
-        self._rebuild()
 
     def _build_catalog_tab(self, parent):
         wrap = tk.Frame(parent, bg=self._c("border"))
@@ -342,7 +351,7 @@ class App(tk.Tk):
 
         self.usage = tk.Label(
             wrap, text="Recent API calls: ...", bg=p["bg"], fg=p["dim"],
-            font=(FONT, SZ_BODY), anchor="w",
+            font=(FONT, SZ_INFO), anchor="w",
         )
         self.usage.pack(fill="x", padx=6, pady=(4, 2))
 
@@ -381,19 +390,19 @@ class App(tk.Tk):
         ).pack(side="right")
 
         self.stealth_info = tk.Label(
-            wrap, text="", bg=p["bg"], fg=p["dim"], font=(FONT, SZ_BODY), anchor="w",
+            wrap, text="", bg=p["bg"], fg=p["dim"], font=(FONT, SZ_INFO), anchor="w",
         )
         self.stealth_info.pack(fill="x", padx=6, pady=(2, 2))
 
         inner = tk.Frame(wrap, bg=p["border"])
         inner.pack(fill="both", expand=True)
 
-        cols = ("Model", "Mentions", "Last seen", "Origin", "State", "Detail")
-        widths = {"Model": 260, "Mentions": 90, "Last seen": 170, "Origin": 120, "State": 120, "Detail": 260}
+        cols = STEALTH_COLS
+        sizes = STEALTH_WIDTHS
         self.tree3 = ttk.Treeview(inner, columns=cols, show="headings", height=9)
         for col in cols:
             self.tree3.heading(col, text=col, anchor="w")
-            self.tree3.column(col, width=widths[col], anchor="w")
+            self.tree3.column(col, width=sizes[col], anchor="w")
         self.tree3.column("Model", minwidth=200, stretch=True)
         self.tree3.column("Detail", minwidth=180, stretch=True)
         self.tree3.pack(side="left", fill="both", expand=True)
@@ -410,7 +419,7 @@ class App(tk.Tk):
     def _build_status(self):
         self.status = tk.Label(
             self, text="Checking...", bg=self._c("bg"), fg=self._c("dim"),
-            font=(FONT, SZ_BODY), anchor="w",
+            font=(FONT, SZ_INFO), anchor="w",
         )
         self.status.pack(fill="x", padx=16, pady=(2, 12))
 
@@ -419,23 +428,38 @@ class App(tk.Tk):
         win = tk.Toplevel(self)
         win.title("About Nous Free Models")
         win.configure(bg=p["bg"])
-        win.geometry("460x300")
+        win.resizable(False, False)
         win.transient(self)
         win.grab_set()
 
         tk.Label(win, text="Nous Free Models", bg=p["bg"], fg=p["fg"],
-                 font=("Segoe UI Semibold", 18)).pack(pady=(18, 4))
+                 font=("Segoe UI Semibold", 20)).pack(pady=(20, 2))
+        tk.Label(win, text="Created by luxotek", bg=p["bg"], fg=p["accent"],
+                 font=("Segoe UI Semibold", 14)).pack(pady=(0, 10))
+
         lines = [
-            "Live free-model catalog plus a Hermes config check.",
+            "A live free-model catalog plus a Hermes configuration check.",
+            "Data: Nous Portal + inference APIs, local Hermes config and logs.",
             "",
-            "Built with AI assistance — Hermes Agent.",
-            "Data: Nous Portal & inference APIs (live), local Hermes config.",
-            "License: MIT (see LICENSE) · NOTICE.md",
+            "Built with AI assistance (Hermes Agent) — see NOTICE.md.",
+            "Source-available, personal use only; not for sale or redistribution",
+            "without express written permission from luxotek. See LICENSE.",
         ]
         for line in lines:
-            tk.Label(win, text=line, bg=p["bg"], fg=p["dim"],
-                     font=(FONT, 12), justify="left").pack(fill="x", padx=24)
-        ttk.Button(win, text="Close", command=win.destroy).pack(pady=16)
+            if line:
+                tk.Label(win, text=line, bg=p["bg"], fg=p["dim"],
+                         font=(FONT, 13), justify="left", wraplength=520).pack(fill="x", padx=32)
+            else:
+                tk.Label(win, text="", bg=p["bg"]).pack(pady=4)
+
+        ttk.Button(win, text="Close", command=win.destroy).pack(pady=(14, 18))
+        win.bind("<Escape>", lambda _e: win.destroy())
+        win.update_idletasks()
+        width = max(win.winfo_width(), 560)
+        height = win.winfo_height()
+        x = self.winfo_rootx() + (self.winfo_width() - width) // 2
+        y = self.winfo_rooty() + (self.winfo_height() - height) // 2
+        win.geometry(f"{width}x{height}+{x}+{y}")
 
     # ---------- info strip / empty states / bubbles ----------
 
@@ -444,7 +468,7 @@ class App(tk.Tk):
         self.strip = tk.Frame(self, bg=p["bg"])
         self.strip.pack(fill="x", padx=14, pady=(2, 2))
         self.info_summary = tk.Label(
-            self.strip, text="", bg=p["bg"], fg=p["dim"], font=(FONT, SZ_BODY), anchor="w",
+            self.strip, text="", bg=p["bg"], fg=p["dim"], font=(FONT, SZ_INFO), anchor="w",
         )
         self.info_summary.pack(side="left")
         self.history_btn = ttk.Button(self.strip, text="History", command=self.toggle_history)
@@ -472,7 +496,7 @@ class App(tk.Tk):
         entries = list(reversed(self.alert_history[-8:]))
         if not entries:
             tk.Label(self.history_box, text="No alerts yet.", bg=p["bg"], fg=p["dim"],
-                     font=(FONT, SZ_BODY)).pack(anchor="w", padx=10, pady=6)
+                     font=(FONT, SZ_INFO)).pack(anchor="w", padx=10, pady=6)
             return
         for entry in entries:
             color = {"critical": p["error"], "warn": p["warn"], "ok": p["ok"]}.get(
@@ -481,8 +505,8 @@ class App(tk.Tk):
             row = tk.Frame(self.history_box, bg=p["bg"])
             row.pack(fill="x", padx=10, pady=(4, 0))
             tk.Label(row, text=entry["ts"], bg=p["bg"], fg=p["dim"],
-                     font=(FONT, 10)).pack(side="left")
-            tk.Label(row, text=entry["text"], bg=p["bg"], fg=color, font=(FONT, 11),
+                     font=(FONT, 12)).pack(side="left")
+            tk.Label(row, text=entry["text"], bg=p["bg"], fg=color, font=(FONT, 13),
                      anchor="w", justify="left", wraplength=900).pack(side="left", padx=(8, 0))
 
     def _refresh_info_strip(self):
@@ -503,10 +527,10 @@ class App(tk.Tk):
         p = self.palette
         frame = tk.Frame(parent, bg=p["bg"])
         tk.Label(frame, text=title, bg=p["bg"], fg=p["fg"],
-                 font=("Segoe UI Semibold", 13)).pack(pady=(0, 4))
+                 font=("Segoe UI Semibold", 15)).pack(pady=(0, 4))
         for line in lines:
             tk.Label(frame, text=line, bg=p["bg"], fg=p["dim"],
-                     font=(FONT, SZ_BODY)).pack()
+                     font=(FONT, SZ_INFO)).pack()
         frame.place(in_=parent, relx=0.5, rely=0.5, anchor="center")
         self._empty_frames[key] = frame
 
@@ -702,17 +726,68 @@ class App(tk.Tk):
                 self._last_alerted_active = last
                 self._rebuild()
 
-    def _on_tree_select(self, _event=None):
-        tree = getattr(self, "tree", None) or getattr(self, "tree2", None)
+    def _on_tree_select(self, event=None):
+        tree = getattr(event, "widget", None) or getattr(self, "tree", None)
         if tree is None:
+            return
+        try:
+            if not tree.winfo_exists():
+                return
+        except Exception:
             return
         sel = tree.selection()
         if not sel:
             return
         values = tree.item(sel[0])["values"]
-        self.selected_slug = values[0] if tree is self.tree else values[1]
+        title = ""
+        chips = ""
+        color = None
+        if tree is self.tree:
+            self.selected_slug = values[0]
+            title = values[0]
+            chips = (f"Context {values[1]}   ·   Inputs {values[2]}   ·   Price {values[3]}"
+                     f"   ·   Flags {values[4]}   ·   Source {values[5]}")
+        elif tree is self.tree2:
+            self.selected_slug = values[1]
+            status = values[3].lower()
+            color = {"free": self._c("ok"), "paid": self._c("warn"), "missing": self._c("error")}.get(status)
+            title = f"{values[0]}  →  {values[1]}"
+            chips = f"Provider {values[2]}   ·   Status {values[3]}   ·   {values[4]}"
+        elif tree is self.tree3:
+            self.selected_slug = values[0]
+            state = values[4].lower()
+            color = {"alive": self._c("ok"), "missing": self._c("error"),
+                     "rate_limited": self._c("warn")}.get(state)
+            title = values[0]
+            chips = (f"Mentions {values[1]}   ·   Last seen {values[2]}   ·   Origin {values[3]}"
+                     f"   ·   State {values[4]}   ·   {values[5]}")
+
+        if hasattr(self, "detail_title"):
+            self.detail_title.configure(
+                text=title or "Select a row to see its full details.",
+                fg=color if color else (self._c("fg") if title else self._c("dim")),
+            )
+            self.detail_chips.configure(text=chips, wraplength=max(self.winfo_width() - 48, 320))
         if self.set_main_btn is not None:
             self.set_main_btn.state(["!disabled"])
+
+    def _apply_responsive_columns(self, _event=None):
+        width = self.winfo_width()
+        specs = (
+            (getattr(self, "tree", None), COLS, "tree"),
+            (getattr(self, "tree2", None), CFG_COLS, "tree2"),
+            (getattr(self, "tree3", None), STEALTH_COLS, "tree3"),
+        )
+        for tree, cols, key in specs:
+            if tree is None:
+                continue
+            try:
+                if not tree.winfo_exists():
+                    continue
+            except Exception:
+                continue
+            hidden = {col for col, need in RESPONSIVE[key] if width < need}
+            tree.configure(displaycolumns=[c for c in cols if c not in hidden])
 
     def _show_error(self, error):
         self._busy = False

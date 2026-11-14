@@ -7,5 +7,6 @@ direction and review.
 
 - Data shown by the app comes live from the Nous Portal / inference APIs and from
   the local Hermes configuration; no model output is stored or redistributed.
-- Distributed under the MIT License (see `LICENSE`).
+- Source-available, personal use only (see `LICENSE`); not for sale or
+  redistribution without express written permission from luxotek.
 - Not affiliated with or endorsed by Nous Research.

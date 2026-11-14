@@ -67,8 +67,9 @@ palette. If neither source resolves, a built-in dark palette is used.
 
 ## AI notice & license
 
-This project was created with AI assistance (Hermes Agent). See `NOTICE.md`;
-licensed under the MIT License (`LICENSE`).
+This project was created with AI assistance (Hermes Agent). See `NOTICE.md`.
+Source-available, personal use only — not for sale or redistribution without
+express written permission from luxotek (`LICENSE`).
 
 ## Where the token comes from
 
@@ -88,4 +89,4 @@ an auth error, re-login to the Portal through Hermes (`hermes setup`) and try ag
 | `stealth.py` | Log mining, liveness probes, 429-alternate discovery |
 | `bubbles.py` | Bottom-right bubble notification stack |
 | `run.ps1` / `run.cmd` | Launchers that find a Python automatically |
-| `LICENSE` / `NOTICE.md` | MIT license + AI-assistance notice |
+| `LICENSE` / `NOTICE.md` | Source-available license + AI-assistance notice |
