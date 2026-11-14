@@ -49,6 +49,10 @@ Remote: **https://github.com/luxotek/herms-free-mode** (pushed)
 - Push required a lease-guarded force update once (remote had GitHub's boilerplate
   "Initial commit"); history is now linear on top of it.
 
+## Deferred
+
+- Further UI sizing/spacing polish and side-by-side refinements — sizing settled for now.
+
 ## Next steps
 
 1. Stage 3: transition alerts (model dies / comes back) and actions — copy slug, set a new
