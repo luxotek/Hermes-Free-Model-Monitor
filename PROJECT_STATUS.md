@@ -4,7 +4,7 @@ Last updated: 2026-11-14
 
 Current stage: **0–5 complete; 6 (local models) parked**
 
-Remote: **https://github.com/luxotek/hermes-free-model-monitor** (renamed from `herms-free-mode`; pushed)
+Remote: **https://github.com/luxotek/Hermes-Free-Model-Monitor** (renamed from `herms-free-mode`; pushed)
 
 ## Roadmap
 

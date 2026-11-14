@@ -511,7 +511,7 @@ class App(tk.Tk):
         try:
             os.startfile(path)
         except Exception:
-            webbrowser.open("https://github.com/luxotek/herms-free-mode")
+            webbrowser.open("https://github.com/luxotek/Hermes-Free-Model-Monitor")
 
     # ---------- column fitting ----------
 
