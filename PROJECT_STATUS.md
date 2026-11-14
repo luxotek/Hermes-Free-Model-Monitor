@@ -2,7 +2,7 @@
 
 Last updated: 2026-11-14
 
-Current stage: **3 + 4 complete, starting 5 (parked)**
+Current stage: **0–5 complete; 6 (local models) parked**
 
 Remote: **https://github.com/luxotek/herms-free-mode** (pushed)
 
@@ -14,7 +14,9 @@ Remote: **https://github.com/luxotek/herms-free-mode** (pushed)
 - [x] 3. Alerts + model actions (death notices, set main model, copy slug, session hint)
 - [x] 3b. Active-model death alert + return suppression
 - [x] 4. Stealth watch (log-mined watchlist, liveness probes, 429 `alternates` discovery)
-- [ ] 5. Parked: local model scan/load — SimSense explicitly out of scope
+- [x] 5a. InfoSpace (alert history strip, contextual empty states)
+- [x] 5b. Bubble notifications (app-anchored bottom-right stack)
+- [ ] 6. Parked: local model scan/load — SimSense explicitly out of scope
 
 ## Stage 4 complete (2026-11-14)
 - New `stealth.py`: mines `logs/agent.log` for `stealth/*` slugs (mention count + last-seen),
@@ -25,6 +27,20 @@ Remote: **https://github.com/luxotek/herms-free-mode** (pushed)
   and per-row detail. State persists in `stealth_state.json` (gitignored).
 - Verified live: mined `stealth/crouton-alpha` (428 mentions, last seen 2026-11-13 20:58);
   probe returned HTTP 404 (currently gone).
+
+## Stage 5 complete (2026-11-14)
+- New `bubbles.py`: borderless, always-on-top toast cards anchored to the app window's
+  bottom-right, stacking upward (newest at the bottom), auto-dismiss by severity
+  (critical 9 s, warn 7 s, other 6 s), click-to-close. Square corners (DPI-safe).
+- Options row gains a **Bubbles** checkbox (persisted in `ui_state.json`). Bubbles fire on
+  model alerts, active-model loss, probe summaries, and refresh errors.
+- Info strip under the toolbar: `N free of M · deep HH:MM · stealth N` plus a
+  `History (N)` button that expands an alert-history list (last 8, severity-colored,
+  capped at 20 entries).
+- Empty-state infospace: each pane shows a centered tip block instead of dead whitespace
+  when it has nothing to show (catalog empty / config empty / no stealth watches).
+- Verified live: startup alert for `fallback #2` raised both the alert bar, history entry,
+  and a bubble that auto-dismissed; split/tab rebuild stays clean.
 
 ## Enhancements landed (post stage 2)
 

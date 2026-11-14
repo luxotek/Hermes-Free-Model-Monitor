@@ -31,6 +31,15 @@ Double-click **`run.ps1`** (right-click > Run with PowerShell) or **`run.cmd`**.
   429, any `alternates` listed in the error are added to the watchlist as new
   rows (origin `429 alternates`). Watches and probe results persist in
   `stealth_state.json` (gitignored).
+- **Bubbles**: self-contained toast cards in the window's bottom-right corner
+  (UniGetUI-style): newest at the bottom, stack upward, auto-dismiss by severity,
+  click to close. Toggle with the **Bubbles** checkbox; fired on model alerts,
+  active-model loss, probe summaries, and refresh errors.
+- **Info strip + history**: slim status line under the toolbar
+  (`N free of M · deep HH:MM · stealth N`) with a `History (N)` button that expands
+  a severity-colored list of recent alerts.
+- **Empty states**: panes with nothing to show display a centered tip block instead
+  of dead whitespace.
 - **Copy slug** (or double-click any row) copies the model string — e.g.
   `meituan/longcat-2.5:free` — ready to paste into `/model ...` or a config.
 
@@ -77,5 +86,6 @@ an auth error, re-login to the Portal through Hermes (`hermes setup`) and try ag
 | `theme.py` | Skin engine + desktop preset palettes, override persistence |
 | `alerts.py` | Per-role transition detection + taskbar flash helper |
 | `stealth.py` | Log mining, liveness probes, 429-alternate discovery |
+| `bubbles.py` | Bottom-right bubble notification stack |
 | `run.ps1` / `run.cmd` | Launchers that find a Python automatically |
 | `LICENSE` / `NOTICE.md` | MIT license + AI-assistance notice |

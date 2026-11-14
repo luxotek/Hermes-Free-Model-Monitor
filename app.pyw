@@ -9,6 +9,7 @@ import tkinter as tk
 from tkinter import messagebox, ttk
 
 import alerts
+import bubbles
 import hermes_state
 import nous_core
 import stealth
@@ -62,6 +63,7 @@ class App(tk.Tk):
         self.usage_data = {"counts": {}, "fallbacks": [], "last": None}
         self.palette = dict(theme.FALLBACK_PALETTE)
         self.meta = {}
+        self.catalog_meta = {}
         self.choice = theme.load_choice()
         self.skins = ["Auto (follow Hermes)"] + theme.skin_names()
         self.ui = load_ui_state()
@@ -76,6 +78,11 @@ class App(tk.Tk):
         self.auto_probe_var = tk.BooleanVar(
             value=bool(self.stealth_state.get("settings", {}).get("auto_probe"))
         )
+        self.bubbles_var = tk.BooleanVar(value=bool(self.ui.get("bubbles")))
+        self.alert_history = []
+        self.history_open = False
+        self._empty_frames = {}
+        self.bubbles = None
         self._busy = False
         self._models_after_id = None
         self._deep_after_id = None
@@ -89,6 +96,9 @@ class App(tk.Tk):
         self.palette, self.meta = palette, meta
         self.configure(bg=self.palette["bg"])
         self._style()
+        self.bubbles = bubbles.BubbleStack(
+            self, lambda: self.palette, lambda: bool(self.bubbles_var.get())
+        )
         self._build_ui()
         self._sync_combo()
         self.after(200, self.refresh)
@@ -203,6 +213,7 @@ class App(tk.Tk):
         for widget in list(self.winfo_children()):
             widget.destroy()
         self._build_toolbar()
+        self._build_info_strip()
         if self.split_var.get():
             self._build_split()
         else:
@@ -296,6 +307,10 @@ class App(tk.Tk):
         ).pack(side="left", padx=(18, 0))
         ttk.Checkbutton(
             row, text="Deep check (4 h)", variable=self.deep_var,
+            command=self._apply_timers,
+        ).pack(side="left", padx=(18, 0))
+        ttk.Checkbutton(
+            row, text="Bubbles", variable=self.bubbles_var,
             command=self._apply_timers,
         ).pack(side="left", padx=(18, 0))
 
@@ -422,6 +437,97 @@ class App(tk.Tk):
                      font=(FONT, 12), justify="left").pack(fill="x", padx=24)
         ttk.Button(win, text="Close", command=win.destroy).pack(pady=16)
 
+    # ---------- info strip / empty states / bubbles ----------
+
+    def _build_info_strip(self):
+        p = self.palette
+        self.strip = tk.Frame(self, bg=p["bg"])
+        self.strip.pack(fill="x", padx=14, pady=(2, 2))
+        self.info_summary = tk.Label(
+            self.strip, text="", bg=p["bg"], fg=p["dim"], font=(FONT, SZ_BODY), anchor="w",
+        )
+        self.info_summary.pack(side="left")
+        self.history_btn = ttk.Button(self.strip, text="History", command=self.toggle_history)
+        self.history_btn.pack(side="right")
+
+        self.history_box = tk.Frame(self, bg=p["border"])
+        if self.history_open:
+            self._render_history()
+            self.history_box.pack(fill="x", padx=14, pady=(0, 4), after=self.strip)
+        self._refresh_info_strip()
+
+    def toggle_history(self):
+        self.history_open = not self.history_open
+        if self.history_open:
+            self._render_history()
+            self.history_box.pack(fill="x", padx=14, pady=(0, 4), after=self.strip)
+        else:
+            self.history_box.pack_forget()
+        self._refresh_info_strip()
+
+    def _render_history(self):
+        for child in list(self.history_box.winfo_children()):
+            child.destroy()
+        p = self.palette
+        entries = list(reversed(self.alert_history[-8:]))
+        if not entries:
+            tk.Label(self.history_box, text="No alerts yet.", bg=p["bg"], fg=p["dim"],
+                     font=(FONT, SZ_BODY)).pack(anchor="w", padx=10, pady=6)
+            return
+        for entry in entries:
+            color = {"critical": p["error"], "warn": p["warn"], "ok": p["ok"]}.get(
+                entry["level"], p["accent"]
+            )
+            row = tk.Frame(self.history_box, bg=p["bg"])
+            row.pack(fill="x", padx=10, pady=(4, 0))
+            tk.Label(row, text=entry["ts"], bg=p["bg"], fg=p["dim"],
+                     font=(FONT, 10)).pack(side="left")
+            tk.Label(row, text=entry["text"], bg=p["bg"], fg=color, font=(FONT, 11),
+                     anchor="w", justify="left", wraplength=900).pack(side="left", padx=(8, 0))
+
+    def _refresh_info_strip(self):
+        if not hasattr(self, "info_summary"):
+            return
+        parts = []
+        if self.catalog_meta:
+            parts.append(f"{self.catalog_meta.get('free_count')} free of {self.catalog_meta.get('catalog_rows')}")
+        if hasattr(self, "last_deep"):
+            parts.append(f"deep {self.last_deep}")
+        parts.append(f"stealth {len(self.stealth_rows)}")
+        self.info_summary.configure(text="   ·   ".join(parts) or "ready")
+        count = len(self.alert_history)
+        self.history_btn.configure(text=f"History ({count})" if count else "History")
+
+    def _empty_overlay(self, key, parent, title, lines):
+        self._clear_empty(key)
+        p = self.palette
+        frame = tk.Frame(parent, bg=p["bg"])
+        tk.Label(frame, text=title, bg=p["bg"], fg=p["fg"],
+                 font=("Segoe UI Semibold", 13)).pack(pady=(0, 4))
+        for line in lines:
+            tk.Label(frame, text=line, bg=p["bg"], fg=p["dim"],
+                     font=(FONT, SZ_BODY)).pack()
+        frame.place(in_=parent, relx=0.5, rely=0.5, anchor="center")
+        self._empty_frames[key] = frame
+
+    def _clear_empty(self, key):
+        frame = self._empty_frames.pop(key, None)
+        if frame is not None:
+            try:
+                frame.destroy()
+            except Exception:
+                pass
+
+    def _record_history(self, level, text):
+        ts = datetime.datetime.now().strftime("%H:%M")
+        self.alert_history.append({"ts": ts, "level": level, "text": text})
+        self.alert_history = self.alert_history[-20:]
+        self._refresh_info_strip()
+
+    def _notify(self, title, message, level="info"):
+        if self.bubbles is not None:
+            self.bubbles.show(title, message, level)
+
     # ---------- data ----------
 
     def refresh(self):
@@ -496,7 +602,7 @@ class App(tk.Tk):
             return
         self.tree2.delete(*self.tree2.get_children())
         free_names = {m["name"] for m in self.models}
-        catalog_ids = set(self.meta.get("catalog_ids", []))
+        catalog_ids = set(self.catalog_meta.get("catalog_ids", []))
         for row in rows:
             status, detail = self._classify(row["model"], free_names, catalog_ids)
             self.tree2.insert(
@@ -518,10 +624,20 @@ class App(tk.Tk):
             text += f" · fallbacks fired: {len(fallbacks)}"
         self.usage.configure(text=text)
 
+        if rows:
+            self._clear_empty("config")
+        elif getattr(self, "_data_loaded", False) and hasattr(self, "tree2"):
+            self._empty_overlay(
+                "config", self.tree2.master,
+                "No configured models found",
+                ["Nothing returned for model.default, auxiliary pins, or fallbacks.",
+                 "Tip: anything pinned here is classified FREE / PAID / MISSING."],
+            )
+
     def _status_line(self):
         free = ""
-        if self.meta:
-            free = f" · {self.meta.get('free_count')} free of {self.meta.get('catalog_rows')}"
+        if self.catalog_meta:
+            free = f" · {self.catalog_meta.get('free_count')} free of {self.catalog_meta.get('catalog_rows')}"
         return f"Models {self.last_models} · Config {self.last_deep}{free}"
 
     def _show(self, models, meta, cfg_rows, usage):
@@ -530,23 +646,35 @@ class App(tk.Tk):
         if models is not None:
             self.models = models
             self.meta = meta
+            self.catalog_meta = meta
             if hasattr(self, "tree"):
                 self.tree.delete(*self.tree.get_children())
                 for model in models:
                     self._insert(model)
+                if models:
+                    self._clear_empty("models")
+                else:
+                    self._empty_overlay(
+                        "models", self.tree.master,
+                        "No free models right now",
+                        ["The Portal + inference union came back empty.",
+                         "Tip: check your login with `hermes setup`, then hit Refresh."],
+                    )
             self.last_models = stamp
         if usage is not None:
             self._render_config(cfg_rows, usage)
+            self._data_loaded = True
             self.last_deep = stamp
             self._evaluate_alerts(cfg_rows, usage, stamp)
             self._evaluate_active_alert(usage)
 
         self.status.configure(text=self._status_line(), fg=self._c("ok"))
         self.info.configure(text="account: free tier")
+        self._refresh_info_strip()
 
     def _evaluate_alerts(self, cfg_rows, usage, stamp):
         free_names = {m["name"] for m in self.models}
-        catalog_ids = set(self.meta.get("catalog_ids", []))
+        catalog_ids = set(self.catalog_meta.get("catalog_ids", []))
         new_alerts, current = alerts.compute_alerts(
             self.ui.get("statuses", {}), cfg_rows, free_names, catalog_ids
         )
@@ -555,6 +683,9 @@ class App(tk.Tk):
             self.ui["statuses"] = current
             save_ui_state(self.ui)
             alerts.flash_taskbar(self)
+            for alert in new_alerts:
+                self._record_history(alert["level"], alert["text"])
+                self._notify("Model alert", alert["text"], alert["level"])
             self._rebuild()
 
     def _evaluate_active_alert(self, usage):
@@ -562,12 +693,12 @@ class App(tk.Tk):
         if not last:
             self._last_alerted_active = None
             return
-        if last not in self.models and last not in self.meta.get("catalog_ids", []):
+        if last not in self.models and last not in self.catalog_meta.get("catalog_ids", []):
             if last != self._last_alerted_active:
-                self.alerts.append({
-                    "level": "critical",
-                    "text": f"Active model {last} is no longer available",
-                })
+                text = f"Active model {last} is no longer available"
+                self.alerts.append({"level": "critical", "text": text})
+                self._record_history("critical", text)
+                self._notify("Active model gone", text, "critical")
                 self._last_alerted_active = last
                 self._rebuild()
 
@@ -587,6 +718,7 @@ class App(tk.Tk):
         self._busy = False
         self.status.configure(text=f"Error: {error}", fg=self._c("error"))
         self.info.configure(text="")
+        self._notify("Refresh failed", str(error)[:160], "critical")
 
     def set_main_model(self):
         slug = self.selected_slug
@@ -674,6 +806,15 @@ class App(tk.Tk):
                 ),
                 tags=(row["state"],),
             )
+        if self.stealth_rows:
+            self._clear_empty("stealth")
+        else:
+            self._empty_overlay(
+                "stealth", self.tree3.master,
+                "No stealth models tracked",
+                ["Stealth slugs are mined from logs/agent.log.",
+                 "Tip: run Rescan log after using an off-catalog model."],
+            )
 
     def rescan_log(self):
         if self._mining:
@@ -731,7 +872,11 @@ class App(tk.Tk):
     def _probes_finished(self):
         self._probing = False
         alive = sum(1 for r in self.stealth_rows if r["state"] == "alive")
-        self.stealth_info.configure(text=f"Done · {alive}/{len(self.stealth_rows)} alive")
+        total = len(self.stealth_rows)
+        self.stealth_info.configure(text=f"Done · {alive}/{total} alive")
+        self._refresh_info_strip()
+        if total:
+            self._notify("Stealth probes", f"{alive}/{total} alive", "ok" if alive else "warn")
 
     def _toggle_auto_probe(self):
         self.stealth_state.setdefault("settings", {})["auto_probe"] = bool(self.auto_probe_var.get())
@@ -753,6 +898,7 @@ class App(tk.Tk):
     def _apply_timers(self):
         self.ui["auto_models"] = bool(self.auto_models_var.get())
         self.ui["deep"] = bool(self.deep_var.get())
+        self.ui["bubbles"] = bool(self.bubbles_var.get())
         save_ui_state(self.ui)
         if self._models_after_id:
             self.after_cancel(self._models_after_id)
