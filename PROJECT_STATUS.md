@@ -4,7 +4,19 @@ Last updated: 2026-11-14
 
 Current stage: **0–5 complete; 6 (local models) parked**
 
-Remote: **https://github.com/luxotek/Hermes-Free-Model-Monitor** (renamed from `herms-free-mode`; pushed)
+Remote: **https://github.com/luxotek/Hermes-Free-Model-Monitor** (renamed from `herms-free-mode`; now public; pushed)
+
+## Rename & release (2026-11-14)
+- App renamed **Nous Free Models → Hermes Free Model Monitor** (HFMM) everywhere:
+  window title/header, Settings dialog, About blurb, docs, user agents (`hfmm/1.0`).
+- Repo renamed `herms-free-mode` → `Hermes-Free-Model-Monitor` and made public.
+- LICENSE rewritten: free personal use; sharing/forking/editing allowed with credit
+  to luxotek + AI notice; no commercial sale by others; luxotek keeps all commercial rights.
+- Start Menu shortcut rebuilt as "Hermes Free Model Monitor.lnk".
+- Portable Windows build: `dist/Hermes Free Model Monitor.exe` (PyInstaller onefile,
+  ~12 MB, no Python needed on the target; requires an existing Hermes install).
+- Release **v0.1.0** published with the exe + SHA256SUMS.txt:
+  https://github.com/luxotek/Hermes-Free-Model-Monitor/releases/tag/v0.1.0
 
 ## Roadmap
 
