@@ -1,0 +1,10 @@
+# Python / local noise
+__pycache__/
+*.pyc
+
+# Secrets — never commit
+.github-pat
+*.token
+
+# Machine-specific UI state
+theme_choice.json
