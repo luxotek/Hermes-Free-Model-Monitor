@@ -200,9 +200,8 @@ class App(tk.Tk):
     # ---------- ui ----------
 
     def _build_ui(self):
-        for widget in self.winfo_children():
-            if isinstance(widget, tk.Frame) and widget.winfo_name() == ".alerts":
-                widget.destroy()
+        for widget in list(self.winfo_children()):
+            widget.destroy()
         self._build_toolbar()
         if self.split_var.get():
             self._build_split()
@@ -237,9 +236,6 @@ class App(tk.Tk):
         ttk.Button(bar, text="Refresh", command=self.refresh).pack(side="right")
 
     def _build_alerts_bar(self):
-        for widget in self.winfo_children():
-            if isinstance(widget, tk.Frame) and widget.winfo_name() == ".alerts":
-                widget.destroy()
         if not self.alerts:
             return
         p = self.palette
