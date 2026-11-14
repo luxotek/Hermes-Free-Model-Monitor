@@ -5,11 +5,14 @@ import threading
 import tkinter as tk
 from tkinter import ttk
 
+import hermes_state
 import nous_core
 import theme
 
 COLS = ("Model", "Context", "Inputs", "Price", "Flags", "Source")
 WIDTHS = {"Model": 320, "Context": 95, "Inputs": 140, "Price": 90, "Flags": 190, "Source": 110}
+CFG_COLS = ("Role", "Model", "Provider", "Status", "Notes")
+CFG_WIDTHS = {"Role": 170, "Model": 300, "Provider": 80, "Status": 90, "Notes": 230}
 REFRESH_MS = 15 * 60 * 1000
 POLL_MS = 3000
 
@@ -18,9 +21,11 @@ class App(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("Nous Free Models")
-        self.geometry("980x470")
-        self.minsize(780, 330)
+        self.geometry("1000x560")
+        self.minsize(820, 420)
         self.models = []
+        self.cfg_rows = []
+        self.usage_data = {"counts": {}, "fallbacks": [], "last": None}
         self.palette = dict(theme.FALLBACK_PALETTE)
         self.meta = {}
         self.choice = theme.load_choice()
@@ -72,6 +77,16 @@ class App(tk.Tk):
             foreground=p["fg"], arrowcolor=p["fg"],
         )
         style.map("TCombobox", fieldbackground=[("readonly", p["card"])], foreground=[("readonly", p["fg"])])
+        style.configure("TNotebook", background=p["bg"], borderwidth=0)
+        style.configure(
+            "TNotebook.Tab", background=p["head_bg"], foreground=p["dim"],
+            padding=(12, 5),
+        )
+        style.map(
+            "TNotebook.Tab",
+            background=[("selected", p["card"])],
+            foreground=[("selected", p["fg"])],
+        )
 
     def apply_theme(self, palette, meta=None):
         self.palette = palette
@@ -83,6 +98,7 @@ class App(tk.Tk):
         self._sync_combo()
         for model in self.models:
             self._insert(model)
+        self._render_config(self.cfg_rows, self.usage_data)
 
     def _sync_combo(self):
         label = "Auto (follow Hermes)"
@@ -131,7 +147,14 @@ class App(tk.Tk):
         for widget in self.winfo_children():
             widget.destroy()
         self._build_toolbar()
-        self._build_tree()
+        self.nb = ttk.Notebook(self)
+        self.nb.pack(fill="both", expand=True, padx=12, pady=(4, 6))
+        tab_free = tk.Frame(self.nb, bg=self._c("bg"))
+        tab_cfg = tk.Frame(self.nb, bg=self._c("bg"))
+        self.nb.add(tab_free, text="Free models")
+        self.nb.add(tab_cfg, text="In Hermes")
+        self._build_catalog_tab(tab_free)
+        self._build_config_tab(tab_cfg)
         self._build_status()
 
     def _build_toolbar(self):
@@ -159,11 +182,11 @@ class App(tk.Tk):
         ttk.Button(bar, text="Copy slug", command=self.copy_selected).pack(side="right", padx=6)
         ttk.Button(bar, text="Refresh", command=self.refresh).pack(side="right", padx=(0, 6))
 
-    def _build_tree(self):
-        wrap = tk.Frame(self, bg=self._c("border"))
-        wrap.pack(fill="both", expand=True, padx=12, pady=(6, 4))
+    def _build_catalog_tab(self, parent):
+        wrap = tk.Frame(parent, bg=self._c("border"))
+        wrap.pack(fill="both", expand=True, padx=0, pady=(2, 0))
 
-        self.tree = ttk.Treeview(wrap, columns=COLS, show="headings", height=14)
+        self.tree = ttk.Treeview(wrap, columns=COLS, show="headings", height=13)
         for col in COLS:
             self.tree.heading(col, text=col, anchor="w")
             self.tree.column(col, width=WIDTHS[col], anchor="w")
@@ -174,6 +197,36 @@ class App(tk.Tk):
         scroll = ttk.Scrollbar(wrap, orient="vertical", command=self.tree.yview)
         scroll.pack(side="right", fill="y")
         self.tree.configure(yscrollcommand=scroll.set)
+
+    def _build_config_tab(self, parent):
+        p = self.palette
+        wrap = tk.Frame(parent, bg=p["bg"])
+        wrap.pack(fill="both", expand=True)
+
+        self.usage = tk.Label(
+            wrap, text="Recent API calls: ...", bg=p["bg"], fg=p["dim"],
+            font=("Segoe UI", 9), anchor="w",
+        )
+        self.usage.pack(fill="x", padx=4, pady=(4, 2))
+
+        inner = tk.Frame(wrap, bg=p["border"])
+        inner.pack(fill="both", expand=True)
+
+        self.tree2 = ttk.Treeview(inner, columns=CFG_COLS, show="headings", height=11)
+        for col in CFG_COLS:
+            self.tree2.heading(col, text=col, anchor="w")
+            self.tree2.column(col, width=CFG_WIDTHS[col], anchor="w")
+        self.tree2.column("Notes", minwidth=160, stretch=True)
+        self.tree2.pack(side="left", fill="both", expand=True)
+        self.tree2.bind("<Double-1>", lambda _e: self.copy_row(self.tree2))
+
+        self.tree2.tag_configure("free", foreground=p["ok"])
+        self.tree2.tag_configure("paid", foreground=p["warn"])
+        self.tree2.tag_configure("missing", foreground=p["error"])
+
+        scroll = ttk.Scrollbar(inner, orient="vertical", command=self.tree2.yview)
+        scroll.pack(side="right", fill="y")
+        self.tree2.configure(yscrollcommand=scroll.set)
 
     def _build_status(self):
         self.status = tk.Label(
@@ -193,11 +246,25 @@ class App(tk.Tk):
         def work():
             try:
                 models, meta = nous_core.fetch_free_models()
-                self.after(0, lambda: self._show(models, meta, None))
-            except Exception as exc:  # noqa: BLE001 - surface any fetch failure
-                self.after(0, lambda: self._show([], {}, exc))
+            except Exception as exc:  # noqa: BLE001
+                self.after(0, lambda: self._show_error(exc))
+                return
+            try:
+                cfg_rows = hermes_state.configured_models()
+                usage = hermes_state.recent_usage()
+            except Exception:
+                cfg_rows, usage = [], {"counts": {}, "fallbacks": [], "last": None}
+            self.after(0, lambda: self._show(models, meta, cfg_rows, usage))
 
         threading.Thread(target=work, daemon=True).start()
+
+    def _classify(self, slug, free_names, catalog_ids):
+        if slug in free_names:
+            return "free", "in live free list"
+        base = slug.split(":", 1)[0]
+        if slug in catalog_ids or base in catalog_ids:
+            return "paid", "listed, not free"
+        return "missing", "not in catalog (dead?)"
 
     def _insert(self, model):
         flags = []
@@ -220,18 +287,44 @@ class App(tk.Tk):
             ),
         )
 
-    def _show(self, models, meta, error):
+    def _render_config(self, rows, usage):
+        self.cfg_rows = rows
+        self.usage_data = usage
+        if not hasattr(self, "tree2"):
+            return
+        self.tree2.delete(*self.tree2.get_children())
+        free_names = {m["name"] for m in self.models}
+        catalog_ids = set(self.meta.get("catalog_ids", []))
+        for row in rows:
+            status, detail = self._classify(row["model"], free_names, catalog_ids)
+            self.tree2.insert(
+                "", "end",
+                values=(
+                    row["role"], row["model"], row["provider"],
+                    status.upper(), detail,
+                ),
+                tags=(status,),
+            )
+
+        counts = usage.get("counts", {})
+        top = ", ".join(f"{k} ×{v}" for k, v in sorted(counts.items(), key=lambda kv: -kv[1])[:4])
+        text = f"Recent API calls: {top or 'none'}"
+        if usage.get("last"):
+            text += f" · last: {usage['last']}"
+        fallbacks = usage.get("fallbacks") or []
+        if fallbacks:
+            text += f" · fallbacks fired: {len(fallbacks)}"
+        self.usage.configure(text=text)
+
+    def _show(self, models, meta, cfg_rows, usage):
         self._busy = False
         self.models = models
+        self.meta = meta
         if hasattr(self, "tree"):
             self.tree.delete(*self.tree.get_children())
             for model in models:
                 self._insert(model)
-
-        if error is not None:
-            self.status.configure(text=f"Error: {error}", fg=self._c("error"))
-            self.info.configure(text="")
-            return
+        self._render_config(cfg_rows, usage)
 
         stamp = datetime.datetime.now().strftime("%H:%M:%S")
         self.status.configure(
@@ -240,16 +333,24 @@ class App(tk.Tk):
         )
         self.info.configure(text="account: free tier")
 
-    def copy_selected(self):
-        if not hasattr(self, "tree"):
-            return
-        sel = self.tree.selection()
+    def _show_error(self, error):
+        self._busy = False
+        self.status.configure(text=f"Error: {error}", fg=self._c("error"))
+        self.info.configure(text="")
+
+    def copy_row(self, tree):
+        sel = tree.selection()
         if not sel:
             return
-        slug = self.tree.item(sel[0])["values"][0]
+        values = tree.item(sel[0])["values"]
+        slug = values[0] if tree is self.tree else values[1]
         self.clipboard_clear()
         self.clipboard_append(slug)
         self.status.configure(text=f"Copied: {slug}", fg=self._c("accent"))
+
+    def copy_selected(self):
+        if hasattr(self, "tree"):
+            self.copy_row(self.tree)
 
     def _schedule_auto(self):
         if self._after_id:

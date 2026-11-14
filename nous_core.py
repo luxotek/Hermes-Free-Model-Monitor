@@ -150,4 +150,8 @@ def fetch_free_models():
         else:
             rec["source"] = next(iter(sources))
         results.append(rec)
-    return results, {"catalog_rows": len(catalog), "free_count": len(results)}
+    return results, {
+        "catalog_rows": len(catalog),
+        "free_count": len(results),
+        "catalog_ids": [m.get("id") for m in catalog if m.get("id")],
+    }

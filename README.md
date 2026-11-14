@@ -1,8 +1,9 @@
 # Nous Free Models
 
-A tiny dark desktop window that shows which Nous Portal models are free on your
-account right now. It unions two live sources, so stealth free SKUs that only
-exist in the inference catalog are included too:
+A tiny desktop window that shows which Nous Portal models are free on your
+account right now, and compares what Hermes has configured against them. It
+unions two live sources, so stealth free SKUs that only exist in the inference
+catalog are included too:
 
 1. `GET portal.nousresearch.com/api/nous/recommended-models` (what the free tier may pick)
 2. `GET inference-api.nousresearch.com/v1/models` (any row where prompt + completion price is 0)
@@ -14,9 +15,26 @@ No install, no dependencies beyond Python 3 with tkinter (stdlib only).
 Double-click **`run.ps1`** (right-click > Run with PowerShell) or **`run.cmd`**.
 `run.cmd` keeps a console open so you can see tracebacks if something breaks.
 
-- **Refresh** re-checks both endpoints.
+- **Refresh** re-checks both endpoints plus the local Hermes config.
 - **Copy slug** (or double-click a row) copies the model string to the clipboard.
 - **Auto-refresh** polls every 15 minutes while the box is ticked.
+
+## Tabs
+
+- **Free models** — the live free catalog: context, inputs, price, flags, source.
+- **In Hermes** — everything Hermes has pinned (`model.default`, auxiliary task
+  models, fallback chain), classified against the live catalog as
+  `FREE` / `PAID` / `MISSING`, plus recent per-model API call counts from
+  `logs/agent.log`. Missing/paid pins are color-coded so a dead fallback stands out.
+
+## Themes
+
+The window follows whatever skin the desktop Hermes app is using (`display.skin`),
+refreshed every ~3 s, so `/skin slate` repaints this window too. To pin a skin
+instead of following, pick it from the dropdown (left of the checkbox); the choice
+is stored in `theme_choice.json` next to the script and survives restarts. Light
+skins such as `daylight` flip the whole window to a light palette. If the Hermes
+source tree can't be imported, the app falls back to its own dark palette.
 
 ## Where the token comes from
 
@@ -28,16 +46,8 @@ an auth error, re-login to the Portal through Hermes (`hermes setup`) and try ag
 
 | File | Purpose |
 |---|---|
-| `app.pyw` | The tkinter window |
+| `app.pyw` | The tkinter window (tabs, toolbar, status) |
 | `nous_core.py` | Auth lookup + the two API calls + union logic |
+| `hermes_state.py` | Reads Hermes config via `hermes config get`; parses `agent.log` usage |
 | `theme.py` | Resolves the installed Hermes skin into the app palette, loads/saves the override choice |
 | `run.ps1` / `run.cmd` | Launchers that find a Python automatically |
-
-## Themes
-
-The window follows whatever skin the desktop Hermes app is using (`display.skin`),
-refreshed every ~3 s, so `/skin slate` repaints this window too. To pin a skin
-instead of following, pick it from the dropdown (left of the checkbox); the choice
-is stored in `theme_choice.json` next to the script and survives restarts. Light
-skins such as `daylight` flip the whole window to a light palette. If the Hermes
-source tree can't be imported, the app falls back to its own dark palette.
