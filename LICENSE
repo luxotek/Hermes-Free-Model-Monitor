@@ -1,26 +1,34 @@
-NOUS FREE MODELS — SOURCE-AVAILABLE LICENSE
+HERMES FREE MODEL MONITOR — SOURCE-AVAILABLE LICENSE
 
 Copyright (c) 2026 luxotek. All rights reserved.
 
-1. Permission is granted, free of charge, to any person obtaining a copy of this
-   software and associated documentation files (the "Software"), to use the Software
-   for personal, non-commercial purposes only.
+1. FREE FOR PERSONAL USE
+   Anyone may use, copy, modify, merge, publish, distribute, and share the
+   Software and its derivatives, free of charge, for personal or other
+   non-commercial purposes.
 
-2. You may not sell, resell, rent, lease, sublicense, or otherwise commercially
-   exploit the Software, nor distribute it to third parties, in whole or in part,
-   without the express prior written permission of luxotek.
-
-3. If you share or publish the Software (or any derivative of it), you must retain:
-   (a) this license and copyright notice,
-   (b) credit to luxotek as the original creator, and
+2. ATTRIBUTION REQUIRED
+   Any copy or derivative of the Software must retain, in a prominent place:
+   (a) this license and the copyright notice above,
+   (b) credit to "luxotek" as the original creator, and
    (c) the AI-assistance notice included in NOTICE.md.
 
-4. THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
-   FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHOR BE
-   LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY ARISING FROM THE USE OF THE
-   SOFTWARE.
+3. NO COMMERCIAL SALE BY OTHERS
+   You may not sell, resell, rent, lease, sublicense, or otherwise commercially
+   exploit the Software, in whole or in part, without the express prior written
+   permission of luxotek. This restriction does not apply to luxotek, who
+   retains all rights in the Software, including the right to sell or license
+   it commercially.
+
+4. "Non-commercial" means not primarily intended for, or directed toward,
+   commercial advantage or monetary compensation.
+
+5. THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+   FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+   AUTHOR BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY ARISING FROM THE
+   USE OF THE SOFTWARE.
 
 This project was created with AI assistance (Hermes Agent). See NOTICE.md.
 
-For permissions beyond the terms above, contact luxotek in writing.
+For commercial licensing, contact luxotek in writing.

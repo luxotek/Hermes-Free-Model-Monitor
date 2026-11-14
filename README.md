@@ -1,14 +1,16 @@
-# Nous Free Models
+# Hermes Free Model Monitor
 
-A tiny desktop window that shows which Nous Portal models are free on your
-account right now, and compares what Hermes has configured against them. It
-unions two live sources, so stealth free SKUs that only exist in the inference
-catalog are included too:
+Checks Hermes's 400+ model list to find which free models are live right now,
+so you can set a reliable main model and fallback chain. A tiny desktop window
+(shortened **HFMM**, the "Hermes FMM companion app") that unions two live
+sources — including stealth free SKUs that only exist in the inference catalog:
 
 1. `GET portal.nousresearch.com/api/nous/recommended-models` (what the free tier may pick)
 2. `GET inference-api.nousresearch.com/v1/models` (any row where prompt + completion price is 0)
 
 No install, no dependencies beyond Python 3 with tkinter (stdlib only).
+A self-contained Windows `.exe` is attached to the GitHub release for machines
+that already have Hermes installed; the source run below is always current.
 
 ## Run it
 
@@ -77,8 +79,9 @@ built-in dark palette is used.
 ## AI notice & license
 
 This project was created with AI assistance (Hermes Agent). See `NOTICE.md`.
-Source-available, personal use only — not for sale or redistribution without
-express written permission from luxotek (`LICENSE`).
+Free for personal use; sharing, forking, and modifying are welcome as long as
+credit to luxotek and the AI notice stay attached. Not for sale as a commercial
+product by anyone else; luxotek retains all commercial rights (`LICENSE`).
 
 ## Where the token comes from
 
@@ -98,4 +101,5 @@ an auth error, re-login to the Portal through Hermes (`hermes setup`) and try ag
 | `stealth.py` | Log mining, liveness probes, 429-alternate discovery |
 | `bubbles.py` | Bottom-right bubble notification stack |
 | `run.ps1` / `run.cmd` | Launchers that find a Python automatically |
-| `LICENSE` / `NOTICE.md` | Source-available license + AI-assistance notice |
+| `LICENSE` / `NOTICE.md` | Source-available non-commercial license + AI-assistance notice |
+| `dist/` | PyInstaller output — the portable Windows exe |

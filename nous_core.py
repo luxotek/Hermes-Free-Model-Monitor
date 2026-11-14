@@ -41,7 +41,7 @@ def _get_json(url, token):
         url,
         headers={
             "Authorization": "Bearer " + token,
-            "User-Agent": "nous-free-models/1.0",
+            "User-Agent": "hfmm/1.0",
         },
     )
     with urllib.request.urlopen(req, timeout=30) as resp:

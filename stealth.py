@@ -108,7 +108,7 @@ def probe(slug):
         headers={
             "Authorization": "Bearer " + auth["token"],
             "Content-Type": "application/json",
-            "User-Agent": "nous-free-models/1.0",
+            "User-Agent": "hfmm/1.0",
         },
     )
     started = time.time()

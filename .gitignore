@@ -10,3 +10,8 @@ __pycache__/
 theme_choice.json
 ui_state.json
 stealth_state.json
+
+# Build output
+build/
+dist/
+*.spec

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3w
-"""Nous Free Models - tiny window that follows the installed Hermes skin."""
+"""Hermes Free Model Monitor - tiny window that follows the installed Hermes skin."""
 import datetime
 import json
 import os
@@ -16,6 +16,8 @@ import hermes_state
 import nous_core
 import stealth
 import theme
+
+APP_NAME = "Hermes Free Model Monitor"
 
 FONT = "Segoe UI"
 SZ_TITLE = 20
@@ -61,7 +63,7 @@ def save_ui_state(state):
 class App(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title("Nous Free Models")
+        self.title(APP_NAME)
         screen_w = self.winfo_screenwidth()
         screen_h = self.winfo_screenheight()
         width = max(1100, min(int(screen_w * 0.78), 1400))
@@ -239,7 +241,7 @@ class App(tk.Tk):
         bar = tk.Frame(self, bg=p["bg"])
         bar.pack(fill="x", padx=14, pady=(14, 4))
 
-        tk.Label(bar, text="Nous Free Models", bg=p["bg"], fg=p["fg"],
+        tk.Label(bar, text=APP_NAME, bg=p["bg"], fg=p["fg"],
                  font=("Segoe UI Semibold", SZ_TITLE)).pack(side="left")
         self.info = tk.Label(bar, text="", bg=p["bg"], fg=p["dim"], font=(FONT, SZ_INFO))
         self.info.pack(side="left", padx=(16, 0))
@@ -431,7 +433,7 @@ class App(tk.Tk):
     def open_settings(self):
         p = self.palette
         win = tk.Toplevel(self)
-        win.title("Settings — Nous Free Models")
+        win.title(f"Settings — {APP_NAME}")
         win.configure(bg=p["bg"])
         win.resizable(False, False)
         win.transient(self)
@@ -479,9 +481,11 @@ class App(tk.Tk):
         tk.Label(about, text="Created by luxotek", bg=p["bg"], fg=p["fg"],
                  font=("Segoe UI Semibold", 13)).pack(anchor="w")
         for line in (
-            "Live free-model catalog plus a Hermes configuration check.",
+            "Checks Hermes's 400+ model list to find which free models are live",
+            "right now, so you can set a reliable main model and fallback chain.",
             "Built with AI assistance (Hermes Agent) — see NOTICE.md.",
-            "Source-available, personal use only; not for sale or redistribution.",
+            "Free for personal use; share and modify with credit + AI notice.",
+            "Not for sale by others — luxotek keeps commercial rights. See LICENSE.",
         ):
             tk.Label(about, text=line, bg=p["bg"], fg=p["dim"], font=(FONT, 12),
                      anchor="w", justify="left").pack(fill="x")

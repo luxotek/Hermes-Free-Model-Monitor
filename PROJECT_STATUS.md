@@ -1,10 +1,10 @@
-# Project Status — Nous Free Models
+# Project Status — Hermes Free Model Monitor
 
 Last updated: 2026-11-14
 
 Current stage: **0–5 complete; 6 (local models) parked**
 
-Remote: **https://github.com/luxotek/herms-free-mode** (pushed)
+Remote: **https://github.com/luxotek/hermes-free-model-monitor** (renamed from `herms-free-mode`; pushed)
 
 ## Roadmap
 
@@ -53,10 +53,11 @@ Remote: **https://github.com/luxotek/herms-free-mode** (pushed)
   860 px), centered at launch.
 - Font bump across status strip, history, alerts, usage line, detail panel (SZ_INFO = 14);
   bubbles widened to 420 px with 14–15 pt text.
-- LICENSE replaced: MIT → source-available, personal use only — no sale or redistribution
-  without express written permission from luxotek; credit + AI notice required (NOTICE.md).
+- LICENSE replaced: MIT → source-available, personal-use (credit + AI notice required). Later
+  revised (2026-11-14): free for personal use, sharing/forking/editing welcome with credit +
+  AI notice, no commercial sale by others, luxotek retains all commercial rights (NOTICE.md).
   About dialog updated (credit line, terms, centered over parent, non-resizable, Esc closes).
-- Start Menu shortcut created: "Nous Free Models.lnk" → project venv pythonw + app.pyw.
+- Start Menu shortcut created: "Hermes Free Model Monitor.lnk" → project venv pythonw + app.pyw.
 
 ## UX pass (2026-11-14, same night)
 - About → **Settings**: toolbar button now opens one dialog holding Preferences
