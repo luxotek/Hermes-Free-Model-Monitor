@@ -23,6 +23,14 @@ Double-click **`run.ps1`** (right-click > Run with PowerShell) or **`run.cmd`**.
   `MISSING`, plus recent per-model API call counts from `logs/agent.log`.
 - **Side by side**: the checkbox under the content area splits the window into
   both tables at once, draggable divider. The choice persists in `ui_state.json`.
+- **Stealth**: off-catalog models mined from `logs/agent.log` (`stealth/*` slugs),
+  with mention counts and last-seen timestamps. Buttons: *Probe selected* /
+  *Probe all* send a one-token chat request to test whether each model still
+  answers (`alive` / `missing` / `rate_limited`), *Rescan log* re-mines the log,
+  and *Auto probe (5 min)* keeps probing in the background. When a probe hits a
+  429, any `alternates` listed in the error are added to the watchlist as new
+  rows (origin `429 alternates`). Watches and probe results persist in
+  `stealth_state.json` (gitignored).
 - **Copy slug** (or double-click any row) copies the model string — e.g.
   `meituan/longcat-2.5:free` — ready to paste into `/model ...` or a config.
 
@@ -67,5 +75,7 @@ an auth error, re-login to the Portal through Hermes (`hermes setup`) and try ag
 | `nous_core.py` | Auth lookup + the two API calls + union logic |
 | `hermes_state.py` | Reads Hermes config via `hermes config get`; parses `agent.log` usage |
 | `theme.py` | Skin engine + desktop preset palettes, override persistence |
+| `alerts.py` | Per-role transition detection + taskbar flash helper |
+| `stealth.py` | Log mining, liveness probes, 429-alternate discovery |
 | `run.ps1` / `run.cmd` | Launchers that find a Python automatically |
 | `LICENSE` / `NOTICE.md` | MIT license + AI-assistance notice |

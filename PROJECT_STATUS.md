@@ -2,7 +2,7 @@
 
 Last updated: 2026-11-14
 
-Current stage: **2 complete + enhancement pass landed, starting 3**
+Current stage: **3 + 4 complete, starting 5 (parked)**
 
 Remote: **https://github.com/luxotek/herms-free-mode** (pushed)
 
@@ -13,8 +13,18 @@ Remote: **https://github.com/luxotek/herms-free-mode** (pushed)
 - [x] 2. Config vs available comparison (default, aux pins, fallback chain, actual usage)
 - [x] 3. Alerts + model actions (death notices, set main model, copy slug, session hint)
 - [x] 3b. Active-model death alert + return suppression
-- [ ] 4. Stealth watch (log-mined watchlist, liveness probes, 429 `alternates` discovery)
+- [x] 4. Stealth watch (log-mined watchlist, liveness probes, 429 `alternates` discovery)
 - [ ] 5. Parked: local model scan/load — SimSense explicitly out of scope
+
+## Stage 4 complete (2026-11-14)
+- New `stealth.py`: mines `logs/agent.log` for `stealth/*` slugs (mention count + last-seen),
+  probes each with a one-token chat completion (`alive` / `missing` / `rate_limited`), and
+  folds any `alternates` from 429 error bodies into the watchlist.
+- New "Stealth" tab (third pane in side-by-side mode): buttons *Probe selected* /
+  *Probe all* / *Rescan log*, an *Auto probe (5 min)* toggle, color-coded state column,
+  and per-row detail. State persists in `stealth_state.json` (gitignored).
+- Verified live: mined `stealth/crouton-alpha` (428 mentions, last seen 2026-11-13 20:58);
+  probe returned HTTP 404 (currently gone).
 
 ## Enhancements landed (post stage 2)
 
@@ -56,12 +66,10 @@ Remote: **https://github.com/luxotek/herms-free-mode** (pushed)
 
 ## Next steps
 
-1. Stage 3: transition alerts (model dies / comes back) and actions — copy slug, set a new
-   main model via `hermes config set model.default`, hint for switching the current
-   session with `/model`.
+1. Nothing queued — stages 0–4 are complete; stage 5 (local model scan/load) stays parked.
 
 ## Open questions
 
-- Probe cadence default for stealth watches (manual + 15 min proposed).
-- Whether session-scoped switching may rely on the user running `/model` (fallback if no
-  gateway route exists).
+- Whether Hermes' own API calls can be intercepted to auto-capture 429 `alternates`
+  (currently only app-initiated probes feed discovery).
+- Probe cadence default for stealth watches (manual now; 5 min opt-in toggle available).

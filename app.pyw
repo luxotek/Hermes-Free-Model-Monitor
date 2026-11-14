@@ -3,12 +3,15 @@
 import datetime
 import json
 import os
+import subprocess
 import threading
 import tkinter as tk
-from tkinter import ttk
+from tkinter import messagebox, ttk
 
+import alerts
 import hermes_state
 import nous_core
+import stealth
 import theme
 
 FONT = "Segoe UI"
@@ -24,6 +27,7 @@ CFG_WIDTHS = {"Role": 190, "Model": 340, "Provider": 90, "Status": 100, "Notes":
 
 MODELS_REFRESH_MS = 15 * 60 * 1000
 DEEP_REFRESH_MS = 4 * 60 * 60 * 1000
+STEALTH_PROBE_MS = 5 * 60 * 1000
 POLL_MS = 3000
 UI_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ui_state.json")
 
@@ -61,8 +65,17 @@ class App(tk.Tk):
         self.choice = theme.load_choice()
         self.skins = ["Auto (follow Hermes)"] + theme.skin_names()
         self.ui = load_ui_state()
-        self.last_models = "-"
-        self.last_deep = "-"
+        self.alerts = []
+        self.selected_slug = None
+        self._last_alerted_active = None
+        self.stealth_state = stealth.load_state()
+        self.stealth_rows = stealth.rows(self.stealth_state)
+        self.stealth_after_id = None
+        self._probing = False
+        self._mining = False
+        self.auto_probe_var = tk.BooleanVar(
+            value=bool(self.stealth_state.get("settings", {}).get("auto_probe"))
+        )
         self._busy = False
         self._models_after_id = None
         self._deep_after_id = None
@@ -81,6 +94,9 @@ class App(tk.Tk):
         self.after(200, self.refresh)
         self._apply_timers()
         self._schedule_poll()
+        threading.Thread(target=self._mine_worker, daemon=True).start()
+        if self.auto_probe_var.get():
+            self.stealth_after_id = self.after(STEALTH_PROBE_MS, self._stealth_tick)
 
     # ---------- theming ----------
 
@@ -116,10 +132,7 @@ class App(tk.Tk):
         )
         style.map("TCombobox", fieldbackground=[("readonly", p["card"])], foreground=[("readonly", p["fg"])])
         style.configure("TNotebook", background=p["bg"], borderwidth=0)
-        style.configure(
-            "TNotebook.Tab", background=p["head_bg"], foreground=p["dim"],
-            padding=(16, 8),
-        )
+        style.configure("TNotebook.Tab", background=p["head_bg"], foreground=p["dim"], padding=(16, 8))
         style.map(
             "TNotebook.Tab",
             background=[("selected", p["card"])],
@@ -140,6 +153,8 @@ class App(tk.Tk):
         for model in self.models:
             self._insert(model)
         self._render_config(self.cfg_rows, self.usage_data)
+        if hasattr(self, "tree3"):
+            self._render_stealth()
 
     def _sync_combo(self):
         label = "Auto (follow Hermes)"
@@ -186,7 +201,8 @@ class App(tk.Tk):
 
     def _build_ui(self):
         for widget in self.winfo_children():
-            widget.destroy()
+            if isinstance(widget, tk.Frame) and widget.winfo_name() == ".alerts":
+                widget.destroy()
         self._build_toolbar()
         if self.split_var.get():
             self._build_split()
@@ -194,6 +210,7 @@ class App(tk.Tk):
             self._build_notebook()
         self._build_options()
         self._build_status()
+        self._build_alerts_bar()
 
     def _build_toolbar(self):
         p = self.palette
@@ -212,29 +229,63 @@ class App(tk.Tk):
         combo.bind("<<ComboboxSelected>>", self._on_skin_select)
         combo.pack(side="right", padx=(8, 0))
 
+        self.set_main_btn = ttk.Button(bar, text="Use as main", command=self.set_main_model)
+        self.set_main_btn.state(["disabled"])
+        self.set_main_btn.pack(side="right", padx=8)
         ttk.Button(bar, text="About", command=self.show_about).pack(side="right", padx=8)
-        ttk.Button(bar, text="Copy slug", command=self.copy_selected).pack(side="right", padx=8)
+        ttk.Button(bar, text="Copy slug", command=self.copy_selected).pack(side="right", padx=6)
         ttk.Button(bar, text="Refresh", command=self.refresh).pack(side="right")
+
+    def _build_alerts_bar(self):
+        for widget in self.winfo_children():
+            if isinstance(widget, tk.Frame) and widget.winfo_name() == ".alerts":
+                widget.destroy()
+        if not self.alerts:
+            return
+        p = self.palette
+        container = tk.Frame(self, bg=p["border"])
+        container.pack(fill="x", padx=14, pady=(2, 6))
+        for index, alert in enumerate(self.alerts):
+            color = {"critical": p["error"], "warn": p["warn"], "info": p["ok"]}[alert["level"]]
+            strip = tk.Frame(container, bg=color)
+            strip.pack(fill="x", padx=10, pady=6)
+            tk.Label(
+                strip, text=alert["text"], bg=color, fg=p["bg"], font=(FONT, SZ_BODY),
+                anchor="w", padx=10, pady=6,
+            ).pack(side="left", fill="x", expand=True)
+            ttk.Button(strip, text="Dismiss", command=lambda idx=index: self._dismiss_alert(idx)).pack(
+                side="right", padx=8
+            )
 
     def _build_notebook(self):
         self.nb = ttk.Notebook(self)
         self.nb.pack(fill="both", expand=True, padx=14, pady=(4, 2))
         tab_free = tk.Frame(self.nb, bg=self._c("bg"))
         tab_cfg = tk.Frame(self.nb, bg=self._c("bg"))
+        tab_stealth = tk.Frame(self.nb, bg=self._c("bg"))
         self.nb.add(tab_free, text="Free models")
         self.nb.add(tab_cfg, text="In Hermes")
+        self.nb.add(tab_stealth, text="Stealth")
         self._build_catalog_tab(tab_free)
         self._build_config_tab(tab_cfg)
+        self._build_stealth_tab(tab_stealth)
+        self.tree.bind("<<TreeviewSelect>>", self._on_tree_select)
+        self.tree2.bind("<<TreeviewSelect>>", self._on_tree_select)
 
     def _build_split(self):
         self.pane = ttk.Panedwindow(self, orient="horizontal")
         self.pane.pack(fill="both", expand=True, padx=14, pady=(4, 2))
         left = tk.Frame(self.pane, bg=self._c("bg"))
         right = tk.Frame(self.pane, bg=self._c("bg"))
+        third = tk.Frame(self.pane, bg=self._c("bg"))
         self.pane.add(left, weight=3)
         self.pane.add(right, weight=2)
+        self.pane.add(third, weight=2)
         self._build_catalog_tab(left)
         self._build_config_tab(right)
+        self._build_stealth_tab(third)
+        self.tree.bind("<<TreeviewSelect>>", self._on_tree_select)
+        self.tree2.bind("<<TreeviewSelect>>", self._on_tree_select)
 
     def _build_options(self):
         row = tk.Frame(self, bg=self.palette["bg"])
@@ -302,6 +353,48 @@ class App(tk.Tk):
         scroll = ttk.Scrollbar(inner, orient="vertical", command=self.tree2.yview)
         scroll.pack(side="right", fill="y")
         self.tree2.configure(yscrollcommand=scroll.set)
+
+    def _build_stealth_tab(self, parent):
+        p = self.palette
+        wrap = tk.Frame(parent, bg=p["bg"])
+        wrap.pack(fill="both", expand=True)
+
+        bar = tk.Frame(wrap, bg=p["bg"])
+        bar.pack(fill="x", padx=6, pady=(4, 2))
+        ttk.Button(bar, text="Probe selected", command=self.probe_selected).pack(side="left")
+        ttk.Button(bar, text="Probe all", command=self.probe_all).pack(side="left", padx=6)
+        ttk.Button(bar, text="Rescan log", command=self.rescan_log).pack(side="left")
+        ttk.Checkbutton(
+            bar, text="Auto probe (5 min)", variable=self.auto_probe_var,
+            command=self._toggle_auto_probe,
+        ).pack(side="right")
+
+        self.stealth_info = tk.Label(
+            wrap, text="", bg=p["bg"], fg=p["dim"], font=(FONT, SZ_BODY), anchor="w",
+        )
+        self.stealth_info.pack(fill="x", padx=6, pady=(2, 2))
+
+        inner = tk.Frame(wrap, bg=p["border"])
+        inner.pack(fill="both", expand=True)
+
+        cols = ("Model", "Mentions", "Last seen", "Origin", "State", "Detail")
+        widths = {"Model": 260, "Mentions": 90, "Last seen": 170, "Origin": 120, "State": 120, "Detail": 260}
+        self.tree3 = ttk.Treeview(inner, columns=cols, show="headings", height=9)
+        for col in cols:
+            self.tree3.heading(col, text=col, anchor="w")
+            self.tree3.column(col, width=widths[col], anchor="w")
+        self.tree3.column("Model", minwidth=200, stretch=True)
+        self.tree3.column("Detail", minwidth=180, stretch=True)
+        self.tree3.pack(side="left", fill="both", expand=True)
+
+        self.tree3.tag_configure("alive", foreground=p["ok"])
+        self.tree3.tag_configure("missing", foreground=p["error"])
+        self.tree3.tag_configure("rate_limited", foreground=p["warn"])
+        self.tree3.tag_configure("unprobed", foreground=p["dim"])
+
+        scroll = ttk.Scrollbar(inner, orient="vertical", command=self.tree3.yview)
+        scroll.pack(side="right", fill="y")
+        self.tree3.configure(yscrollcommand=scroll.set)
 
     def _build_status(self):
         self.status = tk.Label(
@@ -449,27 +542,215 @@ class App(tk.Tk):
         if usage is not None:
             self._render_config(cfg_rows, usage)
             self.last_deep = stamp
+            self._evaluate_alerts(cfg_rows, usage, stamp)
+            self._evaluate_active_alert(usage)
+
         self.status.configure(text=self._status_line(), fg=self._c("ok"))
         self.info.configure(text="account: free tier")
+
+    def _evaluate_alerts(self, cfg_rows, usage, stamp):
+        free_names = {m["name"] for m in self.models}
+        catalog_ids = set(self.meta.get("catalog_ids", []))
+        new_alerts, current = alerts.compute_alerts(
+            self.ui.get("statuses", {}), cfg_rows, free_names, catalog_ids
+        )
+        if new_alerts:
+            self.alerts.extend(new_alerts)
+            self.ui["statuses"] = current
+            save_ui_state(self.ui)
+            alerts.flash_taskbar(self)
+            self._rebuild()
+
+    def _evaluate_active_alert(self, usage):
+        last = usage.get("last")
+        if not last:
+            self._last_alerted_active = None
+            return
+        if last not in self.models and last not in self.meta.get("catalog_ids", []):
+            if last != self._last_alerted_active:
+                self.alerts.append({
+                    "level": "critical",
+                    "text": f"Active model {last} is no longer available",
+                })
+                self._last_alerted_active = last
+                self._rebuild()
+
+    def _on_tree_select(self, _event=None):
+        tree = getattr(self, "tree", None) or getattr(self, "tree2", None)
+        if tree is None:
+            return
+        sel = tree.selection()
+        if not sel:
+            return
+        values = tree.item(sel[0])["values"]
+        self.selected_slug = values[0] if tree is self.tree else values[1]
+        if self.set_main_btn is not None:
+            self.set_main_btn.state(["!disabled"])
 
     def _show_error(self, error):
         self._busy = False
         self.status.configure(text=f"Error: {error}", fg=self._c("error"))
         self.info.configure(text="")
 
-    def copy_row(self, tree):
-        sel = tree.selection()
-        if not sel:
+    def set_main_model(self):
+        slug = self.selected_slug
+        if not slug:
             return
-        values = tree.item(sel[0])["values"]
-        slug = values[0] if tree is self.tree else values[1]
-        self.clipboard_clear()
-        self.clipboard_append(slug)
-        self.status.configure(text=f"Copied: {slug}", fg=self._c("accent"))
+        free_names = {m["name"] for m in self.models}
+        if slug not in free_names:
+            messagebox.showwarning(
+                "No model selected", f"{slug} isn't on the live free model list.\nPick a model in the Free models table."
+            )
+            return
+        if not messagebox.askyesno(
+            "Set main model",
+            f"Set Hermes main model to:\n\n{slug}\n\nHermes picks it up from the next turn.\n\nFor this chat only: /model {slug}",
+        ):
+            return
+        try:
+            proc = subprocess.run(
+                ["hermes", "config", "set", "model.default", slug],
+                capture_output=True, text=True, timeout=30,
+            )
+        except Exception as exc:  # noqa: BLE001
+            messagebox.showerror("Set main model failed", str(exc))
+            return
+        if proc.returncode == 0:
+            self.status.configure(text=f"Main model set to {slug}", fg=self._c("ok"))
+            self.refresh_deep()
+        else:
+            messagebox.showerror("Set main model failed", (proc.stderr or proc.stdout or "unknown error").strip())
+
+    def _dismiss_alert(self, index):
+        self.alerts.pop(index)
+        self._rebuild()
 
     def copy_selected(self):
-        if hasattr(self, "tree"):
-            self.copy_row(self.tree)
+        tree = self.tree
+        if not tree.selection():
+            return
+        vals = tree.item(tree.selection()[0])["values"]
+        self.clipboard_clear()
+        self.clipboard_append(vals[0])
+        self.update()
+        self.info.configure(text="Copied: " + vals[0])
+
+    def copy_row(self, tree):
+        if not tree.selection():
+            return
+        vals = tree.item(tree.selection()[0])["values"]
+        self.clipboard_clear()
+        self.clipboard_append(vals[1])
+        self.update()
+        self.info.configure(text="Copied: " + vals[1])
+
+    # ---------- stealth ----------
+
+    def _mine_worker(self):
+        try:
+            stealth.mine_watchlist(self.stealth_state)
+        except Exception:
+            pass
+        try:
+            self.after(0, self._stealth_mined)
+        except RuntimeError:
+            pass
+
+    def _stealth_mined(self):
+        self._mining = False
+        self._refresh_stealth_rows()
+        self.stealth_info.configure(text=f"{len(self.stealth_rows)} tracked · log scanned")
+
+    def _refresh_stealth_rows(self):
+        self.stealth_rows = stealth.rows(self.stealth_state)
+        self._render_stealth()
+
+    def _render_stealth(self):
+        if not hasattr(self, "tree3"):
+            return
+        self.tree3.delete(*self.tree3.get_children())
+        for row in self.stealth_rows:
+            self.tree3.insert(
+                "", "end",
+                values=(
+                    row["slug"], row["calls"], row["last_seen"], row["origin"],
+                    row["state"].upper(), row["detail"] or "-",
+                ),
+                tags=(row["state"],),
+            )
+
+    def rescan_log(self):
+        if self._mining:
+            return
+        self._mining = True
+        self.stealth_info.configure(text="Scanning agent.log…")
+
+        def work():
+            try:
+                stealth.mine_watchlist(self.stealth_state)
+            except Exception as exc:  # noqa: BLE001
+                self.after(0, lambda: self.stealth_info.configure(text=f"Scan failed: {exc}"))
+                return
+            self.after(0, self._stealth_mined)
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def probe_selected(self):
+        tree = getattr(self, "tree3", None)
+        if tree is None or not tree.selection():
+            return
+        slug = tree.item(tree.selection()[0])["values"][0]
+        self._run_probes([slug])
+
+    def probe_all(self):
+        slugs = [r["slug"] for r in self.stealth_rows]
+        if slugs:
+            self._run_probes(slugs)
+
+    def _run_probes(self, slugs):
+        if self._probing or not slugs:
+            return
+        self._probing = True
+        self.stealth_info.configure(text=f"Probing {len(slugs)} model(s)…")
+
+        def work():
+            for slug in slugs:
+                try:
+                    result = stealth.probe(slug)
+                except Exception as exc:  # noqa: BLE001
+                    result = {"state": "error", "detail": str(exc)[:160]}
+                found = stealth.record_probe(self.stealth_state, slug, result)
+                self.after(0, lambda s=slug, r=result, f=found: self._probe_done(s, r, f))
+            self.after(0, self._probes_finished)
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def _probe_done(self, slug, result, found):
+        self._refresh_stealth_rows()
+        note = f"{slug}: {result['state']}"
+        if found:
+            note += f" (+{len(found)} from 429 alternates)"
+        self.stealth_info.configure(text=note)
+
+    def _probes_finished(self):
+        self._probing = False
+        alive = sum(1 for r in self.stealth_rows if r["state"] == "alive")
+        self.stealth_info.configure(text=f"Done · {alive}/{len(self.stealth_rows)} alive")
+
+    def _toggle_auto_probe(self):
+        self.stealth_state.setdefault("settings", {})["auto_probe"] = bool(self.auto_probe_var.get())
+        stealth.save_state(self.stealth_state)
+        if self.stealth_after_id:
+            self.after_cancel(self.stealth_after_id)
+            self.stealth_after_id = None
+        if self.auto_probe_var.get():
+            self.stealth_after_id = self.after(STEALTH_PROBE_MS, self._stealth_tick)
+
+    def _stealth_tick(self):
+        if self.auto_probe_var.get() and not self._probing:
+            self.probe_all()
+        if self.auto_probe_var.get():
+            self.stealth_after_id = self.after(STEALTH_PROBE_MS, self._stealth_tick)
 
     # ---------- timers ----------
 
