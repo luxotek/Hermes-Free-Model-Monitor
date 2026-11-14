@@ -8,12 +8,13 @@ TIMEOUTS = {"critical": 9000, "warn": 7000}
 
 
 class BubbleStack:
-    """Borderless toast cards anchored to the bottom-right of a master window."""
+    """Borderless toast cards anchored to the bottom-right of a widget (default: master)."""
 
-    def __init__(self, master, palette, enabled):
+    def __init__(self, master, palette, enabled, anchor=None):
         self.master = master
         self.palette = palette    # callable -> palette dict
         self.enabled = enabled    # callable -> bool
+        self.anchor = anchor or (lambda: master)
         self.items = []
 
         master.bind("<Configure>", lambda _e: self._restack(), add="+")
@@ -102,8 +103,11 @@ class BubbleStack:
         if not self.items:
             return
         try:
-            base_x = self.master.winfo_rootx() + self.master.winfo_width() - WIDTH - GAP
-            base_y = self.master.winfo_rooty() + self.master.winfo_height() - GAP
+            anchor = self.anchor()
+            if anchor is None:
+                return
+            base_x = anchor.winfo_rootx() + anchor.winfo_width() - WIDTH - GAP
+            base_y = anchor.winfo_rooty() + anchor.winfo_height() - GAP
         except Exception:
             return
         y = base_y

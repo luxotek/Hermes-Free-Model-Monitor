@@ -106,13 +106,16 @@ class App(tk.Tk):
         self.configure(bg=self.palette["bg"])
         self._style()
         self.bubbles = bubbles.BubbleStack(
-            self, lambda: self.palette, lambda: bool(self.bubbles_var.get())
+            self, lambda: self.palette, lambda: bool(self.bubbles_var.get()),
+            anchor=lambda: getattr(self, "nb", None),
         )
         self._build_ui()
         self._sync_combo()
         self.after(200, self.refresh)
         self._apply_timers()
         self._schedule_poll()
+        self._scroll_sync_after_id = None
+        self.after(1000, self._scroll_sync_tick)
         threading.Thread(target=self._mine_worker, daemon=True).start()
         if self.auto_probe_var.get():
             self.stealth_after_id = self.after(STEALTH_PROBE_MS, self._stealth_tick)
@@ -175,7 +178,7 @@ class App(tk.Tk):
         if hasattr(self, "tree3"):
             self._render_stealth()
         if hasattr(self, "tree") and hasattr(self.tree_hscroll, "winfo_exists"):
-            self._autofit_columns(self.tree, self.tree_hscroll)
+            self._autofit_columns(self.tree, self.tree_hscroll, self.tree_vscroll)
 
     def _sync_combo(self):
         label = "Auto (follow Hermes)"
@@ -285,7 +288,7 @@ class App(tk.Tk):
         self.detail_chips.pack(fill="x")
 
     def _build_catalog_tab(self, parent):
-        wrap = tk.Frame(parent, bg=self._c("border"))
+        wrap = tk.Frame(parent, bg=self._c("bg"))
         wrap.pack(fill="both", expand=True, padx=0, pady=(2, 0))
 
         self.tree = ttk.Treeview(wrap, columns=COLS, show="headings", height=12)
@@ -295,11 +298,16 @@ class App(tk.Tk):
         self.tree.pack(side="left", fill="both", expand=True)
         self.tree.bind("<Double-1>", lambda _e: self.copy_selected())
 
-        scroll = ttk.Scrollbar(wrap, orient="vertical", command=self.tree.yview)
-        scroll.pack(side="right", fill="y")
+        self.tree_vscroll = ttk.Scrollbar(wrap, orient="vertical", command=self.tree.yview)
+        self.tree_vscroll.pack(side="right", fill="y")
         self.tree_hscroll = ttk.Scrollbar(wrap, orient="horizontal", command=self.tree.xview)
         self.tree_hscroll.pack(side="bottom", fill="x")
-        self.tree.configure(yscrollcommand=scroll.set, xscrollcommand=self.tree_hscroll.set)
+        self.tree.configure(yscrollcommand=self.tree_vscroll.set, xscrollcommand=self.tree_hscroll.set)
+        self.tree.bind(
+            "<Configure>",
+            lambda _e: self._sync_vscroll(self.tree, self.tree_vscroll),
+            add="+",
+        )
 
     def _build_config_tab(self, parent):
         p = self.palette
@@ -312,7 +320,7 @@ class App(tk.Tk):
         )
         self.usage.pack(fill="x", padx=6, pady=(4, 2))
 
-        inner = tk.Frame(wrap, bg=p["border"])
+        inner = tk.Frame(wrap, bg=p["bg"])
         inner.pack(fill="both", expand=True)
 
         self.tree2 = ttk.Treeview(inner, columns=CFG_COLS, show="headings", height=10)
@@ -326,11 +334,16 @@ class App(tk.Tk):
         self.tree2.tag_configure("paid", foreground=p["warn"])
         self.tree2.tag_configure("missing", foreground=p["error"])
 
-        scroll = ttk.Scrollbar(inner, orient="vertical", command=self.tree2.yview)
-        scroll.pack(side="right", fill="y")
+        self.tree2_vscroll = ttk.Scrollbar(inner, orient="vertical", command=self.tree2.yview)
+        self.tree2_vscroll.pack(side="right", fill="y")
         self.tree2_hscroll = ttk.Scrollbar(inner, orient="horizontal", command=self.tree2.xview)
         self.tree2_hscroll.pack(side="bottom", fill="x")
-        self.tree2.configure(yscrollcommand=scroll.set, xscrollcommand=self.tree2_hscroll.set)
+        self.tree2.configure(yscrollcommand=self.tree2_vscroll.set, xscrollcommand=self.tree2_hscroll.set)
+        self.tree2.bind(
+            "<Configure>",
+            lambda _e: self._sync_vscroll(self.tree2, self.tree2_vscroll),
+            add="+",
+        )
 
     def _build_stealth_tab(self, parent):
         p = self.palette
@@ -352,7 +365,7 @@ class App(tk.Tk):
         )
         self.stealth_info.pack(fill="x", padx=6, pady=(2, 2))
 
-        inner = tk.Frame(wrap, bg=p["border"])
+        inner = tk.Frame(wrap, bg=p["bg"])
         inner.pack(fill="both", expand=True)
 
         cols = STEALTH_COLS
@@ -368,11 +381,16 @@ class App(tk.Tk):
         self.tree3.tag_configure("rate_limited", foreground=p["warn"])
         self.tree3.tag_configure("unprobed", foreground=p["dim"])
 
-        scroll = ttk.Scrollbar(inner, orient="vertical", command=self.tree3.yview)
-        scroll.pack(side="right", fill="y")
+        self.tree3_vscroll = ttk.Scrollbar(inner, orient="vertical", command=self.tree3.yview)
+        self.tree3_vscroll.pack(side="right", fill="y")
         self.tree3_hscroll = ttk.Scrollbar(inner, orient="horizontal", command=self.tree3.xview)
         self.tree3_hscroll.pack(side="bottom", fill="x")
-        self.tree3.configure(yscrollcommand=scroll.set, xscrollcommand=self.tree3_hscroll.set)
+        self.tree3.configure(yscrollcommand=self.tree3_vscroll.set, xscrollcommand=self.tree3_hscroll.set)
+        self.tree3.bind(
+            "<Configure>",
+            lambda _e: self._sync_vscroll(self.tree3, self.tree3_vscroll),
+            add="+",
+        )
 
     def _build_status(self):
         self.status = tk.Label(
@@ -487,7 +505,7 @@ class App(tk.Tk):
 
     # ---------- column fitting ----------
 
-    def _autofit_columns(self, tree, hscroll):
+    def _autofit_columns(self, tree, hscroll, vscroll=None):
         font = getattr(self, "_measure_font", None) or tkfont.Font(family=FONT, size=SZ_TREE)
         cols = tree["columns"]
         items = tree.get_children()
@@ -508,6 +526,56 @@ class App(tk.Tk):
             hscroll.pack_forget()
         else:
             hscroll.pack(side="bottom", fill="x")
+        if vscroll is not None:
+            self._sync_vscroll(tree, vscroll)
+
+    def _sync_vscroll(self, tree, vscroll):
+        if tree is None or vscroll is None:
+            return
+        try:
+            if not tree.winfo_exists() or not tree.winfo_ismapped():
+                return
+        except Exception:
+            return
+        tree.update_idletasks()
+        first, last = tree.yview()
+        need = last - first < 0.999
+        if need == bool(vscroll.winfo_ismapped()):
+            return
+        if need:
+            vscroll.pack(side="right", fill="y")
+        else:
+            vscroll.pack_forget()
+
+    def _sync_hscroll(self, tree, hscroll):
+        if tree is None or hscroll is None:
+            return
+        try:
+            if not tree.winfo_exists() or not tree.winfo_ismapped():
+                return
+        except Exception:
+            return
+        total = sum(tree.column(col, "width") for col in tree["columns"])
+        viewport = tree.winfo_width() - 4
+        need = viewport <= 1 or total > viewport
+        if need == bool(hscroll.winfo_ismapped()):
+            return
+        if need:
+            hscroll.pack(side="bottom", fill="x")
+        else:
+            hscroll.pack_forget()
+
+    def _scroll_sync_tick(self):
+        """Keep scrollbars visible only while they are actually needed."""
+        pairs = (
+            (getattr(self, "tree", None), getattr(self, "tree_vscroll", None), getattr(self, "tree_hscroll", None)),
+            (getattr(self, "tree2", None), getattr(self, "tree2_vscroll", None), getattr(self, "tree2_hscroll", None)),
+            (getattr(self, "tree3", None), getattr(self, "tree3_vscroll", None), getattr(self, "tree3_hscroll", None)),
+        )
+        for tree, vscroll, hscroll in pairs:
+            self._sync_vscroll(tree, vscroll)
+            self._sync_hscroll(tree, hscroll)
+        self._scroll_sync_after_id = self.after(2000, self._scroll_sync_tick)
 
     # ---------- empty states / bubbles ----------
 
@@ -645,7 +713,7 @@ class App(tk.Tk):
                 ["Nothing returned for model.default, auxiliary pins, or fallbacks.",
                  "Tip: anything pinned here is classified FREE / PAID / MISSING."],
             )
-        self._autofit_columns(self.tree2, self.tree2_hscroll)
+        self._autofit_columns(self.tree2, self.tree2_hscroll, self.tree2_vscroll)
 
     def _show(self, models, meta, cfg_rows, usage):
         self._busy = False
@@ -667,7 +735,7 @@ class App(tk.Tk):
                         ["The Portal + inference union came back empty.",
                          "Tip: check your login with `hermes setup`, then hit Refresh."],
                     )
-                self._autofit_columns(self.tree, self.tree_hscroll)
+                self._autofit_columns(self.tree, self.tree_hscroll, self.tree_vscroll)
             self.last_models = stamp
         if usage is not None:
             self._render_config(cfg_rows, usage)
@@ -851,7 +919,7 @@ class App(tk.Tk):
                 ["Stealth slugs are mined from logs/agent.log.",
                  "Tip: run Rescan log after using an off-catalog model."],
             )
-        self._autofit_columns(self.tree3, self.tree3_hscroll)
+        self._autofit_columns(self.tree3, self.tree3_hscroll, self.tree3_vscroll)
 
     def rescan_log(self):
         if self._mining:
