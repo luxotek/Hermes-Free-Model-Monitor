@@ -4,6 +4,8 @@ Last updated: 2026-11-14
 
 Current stage: **2 complete, starting 3**
 
+Remote: **https://github.com/luxotek/herms-free-mode** (pushed, main = local HEAD)
+
 ## Roadmap
 
 - [x] 0. Safety net — git repo, status file, `.gitignore`
@@ -20,11 +22,22 @@ Current stage: **2 complete, starting 3**
   mode plus a manual per-skin override. Polling interval ~3 s. Manual picks persist in
   `theme_choice.json` (gitignored).
 - Work proceeds in git-committed stages so any stage can be reverted independently.
-- GitHub push is deferred until the token is handed over via `%USERPROFILE%\.github-pat`
-  (never pasted in chat, never committed). Repo appears to be `luxotek/herms-free-mode`.
 - Config reading uses `hermes config get <key>` (never hand-edits config.yaml).
 - Stage 2 finding: `fallback #2` (`reflection/beam-1.0-501b-a23b:free`) is listed but no
   longer free — classified PAID, shown color-coded.
+- UI fonts bumped one step larger across the board (accessibility).
+
+## GitHub / token handling
+
+- Token lives in `%USERPROFILE%\.github-pat`; never pasted in chat, never committed.
+- Pushes authenticate through `%USERPROFILE%\.git-nous-helper.sh`, a tiny credential
+  helper that echoes the token from that file:
+  `git -c credential.helper="!C:/Users/Luxotek/.git-nous-helper.sh" push <url> main`
+- Commit author/committer email rewritten to `278851+luxotek@users.noreply.github.com`:
+  GitHub rejected the original push because commits exposed the user's private email
+  (`luxotek@outlook.com`) under their "keep my email private" setting.
+- Push required a lease-guarded force update once (remote had GitHub's boilerplate
+  "Initial commit"); history is now linear on top of it.
 
 ## Next steps
 
@@ -34,7 +47,6 @@ Current stage: **2 complete, starting 3**
 
 ## Open questions
 
-- Exact GitHub repo name/URL for the eventual push (Firefox showed `luxotek/herms-free-mode`).
 - Probe cadence default for stealth watches (manual + 15 min proposed).
 - Whether session-scoped switching may rely on the user running `/model` (fallback if no
   gateway route exists).
