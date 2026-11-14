@@ -15,26 +15,43 @@ No install, no dependencies beyond Python 3 with tkinter (stdlib only).
 Double-click **`run.ps1`** (right-click > Run with PowerShell) or **`run.cmd`**.
 `run.cmd` keeps a console open so you can see tracebacks if something breaks.
 
-- **Refresh** re-checks both endpoints plus the local Hermes config.
-- **Copy slug** (or double-click a row) copies the model string to the clipboard.
-- **Auto-refresh** polls every 15 minutes while the box is ticked.
+## Views
 
-## Tabs
+- **Tabs** (default): *Free models* = the live catalog (context, inputs, price,
+  flags, source); *In Hermes* = everything Hermes has pinned (`model.default`,
+  auxiliary task models, fallback chain) classified as `FREE` / `PAID` /
+  `MISSING`, plus recent per-model API call counts from `logs/agent.log`.
+- **Side by side**: the checkbox under the content area splits the window into
+  both tables at once, draggable divider. The choice persists in `ui_state.json`.
+- **Copy slug** (or double-click any row) copies the model string — e.g.
+  `meituan/longcat-2.5:free` — ready to paste into `/model ...` or a config.
 
-- **Free models** — the live free catalog: context, inputs, price, flags, source.
-- **In Hermes** — everything Hermes has pinned (`model.default`, auxiliary task
-  models, fallback chain), classified against the live catalog as
-  `FREE` / `PAID` / `MISSING`, plus recent per-model API call counts from
-  `logs/agent.log`. Missing/paid pins are color-coded so a dead fallback stands out.
+## What refreshes when
+
+- **Refresh** button: checks everything (catalog + Hermes config + usage).
+- **Auto models (15 min)**: only the free-model catalog, so the list stays
+  current without touching your Hermes config or logs.
+- **Deep check (4 h)**: only the Hermes config + usage counts.
+- The status line shows how fresh each half is: `Models HH:MM · Config HH:MM`.
 
 ## Themes
 
-The window follows whatever skin the desktop Hermes app is using (`display.skin`),
-refreshed every ~3 s, so `/skin slate` repaints this window too. To pin a skin
-instead of following, pick it from the dropdown (left of the checkbox); the choice
-is stored in `theme_choice.json` next to the script and survives restarts. Light
-skins such as `daylight` flip the whole window to a light palette. If the Hermes
-source tree can't be imported, the app falls back to its own dark palette.
+The window follows whatever skin the desktop Hermes app is using, repolled every
+~3 s, so `/skin slate` repaints this window too. Sources, in order:
+
+- the Hermes skin engine (default, ares, mono, slate, daylight, warm-lightmode,
+  poseidon, sisyphus, charizard, plus any user skins in `%LOCALAPPDATA%\hermes\skins`),
+- the desktop-only presets the CLI engine doesn't expose (cyberpunk, midnight,
+  ember, nous, github, catppuccin, everforest, solarized).
+
+Pick a specific skin from the dropdown to pin it instead of following; the choice
+is stored in `theme_choice.json`. Light skins flip the whole window to a light
+palette. If neither source resolves, a built-in dark palette is used.
+
+## AI notice & license
+
+This project was created with AI assistance (Hermes Agent). See `NOTICE.md`;
+licensed under the MIT License (`LICENSE`).
 
 ## Where the token comes from
 
@@ -46,8 +63,9 @@ an auth error, re-login to the Portal through Hermes (`hermes setup`) and try ag
 
 | File | Purpose |
 |---|---|
-| `app.pyw` | The tkinter window (tabs, toolbar, status) |
+| `app.pyw` | The tkinter window (tabs/split, toolbar, timers, About) |
 | `nous_core.py` | Auth lookup + the two API calls + union logic |
 | `hermes_state.py` | Reads Hermes config via `hermes config get`; parses `agent.log` usage |
-| `theme.py` | Resolves the installed Hermes skin into the app palette, loads/saves the override choice |
+| `theme.py` | Skin engine + desktop preset palettes, override persistence |
 | `run.ps1` / `run.cmd` | Launchers that find a Python automatically |
+| `LICENSE` / `NOTICE.md` | MIT license + AI-assistance notice |

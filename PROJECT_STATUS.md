@@ -2,9 +2,9 @@
 
 Last updated: 2026-11-14
 
-Current stage: **2 complete, starting 3**
+Current stage: **2 complete + enhancement pass landed, starting 3**
 
-Remote: **https://github.com/luxotek/herms-free-mode** (pushed, main = local HEAD)
+Remote: **https://github.com/luxotek/herms-free-mode** (pushed)
 
 ## Roadmap
 
@@ -15,17 +15,27 @@ Remote: **https://github.com/luxotek/herms-free-mode** (pushed, main = local HEA
 - [ ] 4. Stealth watch (log-mined watchlist, liveness probes, 429 `alternates` discovery)
 - [ ] 5. Parked: local model scan/load — SimSense explicitly out of scope
 
+## Enhancements landed (post stage 2)
+
+- Second font/accessibility bump across all widgets (title 20, body 13, tree 14, head 13, roomier rows).
+- Side-by-side view toggle alongside tabs (`ui_state.json`, gitignored), draggable divider.
+- Split timers: "Auto models (15 min)" re-checks only the catalog; "Deep check (4 h)"
+  re-reads only Hermes config + usage. Manual Refresh still does both. Status line shows
+  per-half freshness ("Models HH:MM · Config HH:MM").
+- Desktop preset themes exposed in the dropdown (cyberpunk, midnight, ember, nous, github,
+  catppuccin, everforest, solarized) parsed live from `apps/shared/src/theme-presets.ts`.
+- About dialog + MIT LICENSE + NOTICE.md (AI-assistance notice).
+
 ## Decisions
 
 - Cloud-only for this app; no local model loading for now.
 - Themes: live-follow the installed Hermes skin engine, with an `Auto (follow Hermes)`
-  mode plus a manual per-skin override. Polling interval ~3 s. Manual picks persist in
-  `theme_choice.json` (gitignored).
+  mode plus a manual per-skin override; engine names win over same-named presets.
+  Manual picks persist in `theme_choice.json` (gitignored).
 - Work proceeds in git-committed stages so any stage can be reverted independently.
 - Config reading uses `hermes config get <key>` (never hand-edits config.yaml).
 - Stage 2 finding: `fallback #2` (`reflection/beam-1.0-501b-a23b:free`) is listed but no
   longer free — classified PAID, shown color-coded.
-- UI fonts bumped one step larger across the board (accessibility).
 
 ## GitHub / token handling
 
