@@ -58,6 +58,24 @@ Remote: **https://github.com/luxotek/herms-free-mode** (pushed)
   About dialog updated (credit line, terms, centered over parent, non-resizable, Esc closes).
 - Start Menu shortcut created: "Nous Free Models.lnk" → project venv pythonw + app.pyw.
 
+## UX pass (2026-11-14, same night)
+- About → **Settings**: toolbar button now opens one dialog holding Preferences
+  (Auto models / Deep check / Bubbles checkboxes moved off the bottom row), Alert
+  history (last 20, severity-colored), and the About block.
+- Single clear status line replaces the info strip + bottom timers text:
+  `N free models of M total · catalog updated HH:MM · Hermes config checked HH:MM ·
+  stealth watch: N`. The "deep HH:MM" and duplicated "3 of 401" texts are gone.
+- History button removed from the toolbar (it lived under Settings before); action
+  buttons grouped together: Refresh / Copy model name / Set main model.
+- Alert strips at the bottom removed entirely: alerts now surface as colored
+  bubbles (bottom-right) plus the history list in Settings.
+- All three tables auto-fit their columns to content (no dead space) with a
+  horizontal scrollbar when the window is narrower than the table.
+- Copy renamed "Copy model name"; toolbar "Use as main" renamed "Set main model";
+  both flash the result in the status line ("Copied: <slug>", "Main model set to …").
+- About text trimmed to end at "redistribution."; LICENSE and NOTICE.md are
+  clickable links in Settings (open local file, fall back to the GitHub page).
+
 ## Enhancements landed (post stage 2)
 
 - Second font/accessibility bump across all widgets (title 20, body 13, tree 14, head 13, roomier rows).

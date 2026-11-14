@@ -6,6 +6,8 @@ import os
 import subprocess
 import threading
 import tkinter as tk
+import tkinter.font as tkfont
+import webbrowser
 from tkinter import messagebox, ttk
 
 import alerts
@@ -29,13 +31,6 @@ STEALTH_COLS = ("Model", "Mentions", "Last seen", "Origin", "State", "Detail")
 STEALTH_WIDTHS = {"Model": 260, "Mentions": 90, "Last seen": 170, "Origin": 120, "State": 120, "Detail": 260}
 
 SZ_INFO = 14
-
-# columns hidden below these window widths (keeps narrow monitors readable)
-RESPONSIVE = {
-    "tree": [("Price", 1000), ("Flags", 1200), ("Source", 1400)],
-    "tree2": [("Provider", 950), ("Notes", 1250)],
-    "tree3": [("Mentions", 800), ("Last seen", 1000), ("Origin", 1250), ("Detail", 1450)],
-}
 
 MODELS_REFRESH_MS = 15 * 60 * 1000
 DEEP_REFRESH_MS = 4 * 60 * 60 * 1000
@@ -82,9 +77,9 @@ class App(tk.Tk):
         self.choice = theme.load_choice()
         self.skins = ["Auto (follow Hermes)"] + theme.skin_names()
         self.ui = load_ui_state()
-        self.alerts = []
         self.selected_slug = None
         self._last_alerted_active = None
+        self._flash_after_id = None
         self.stealth_state = stealth.load_state()
         self.stealth_rows = stealth.rows(self.stealth_state)
         self.stealth_after_id = None
@@ -95,7 +90,6 @@ class App(tk.Tk):
         )
         self.bubbles_var = tk.BooleanVar(value=bool(self.ui.get("bubbles")))
         self.alert_history = []
-        self.history_open = False
         self._empty_frames = {}
         self.bubbles = None
         self._busy = False
@@ -105,6 +99,7 @@ class App(tk.Tk):
         self.combo_var = tk.StringVar()
         self.auto_models_var = tk.BooleanVar(value=bool(self.ui.get("auto_models")))
         self.deep_var = tk.BooleanVar(value=bool(self.ui.get("deep")))
+        self._measure_font = tkfont.Font(family=FONT, size=SZ_TREE)
 
         palette, meta = theme.resolve(self.choice)
         self.palette, self.meta = palette, meta
@@ -113,7 +108,6 @@ class App(tk.Tk):
         self.bubbles = bubbles.BubbleStack(
             self, lambda: self.palette, lambda: bool(self.bubbles_var.get())
         )
-        self.bind("<Configure>", self._apply_responsive_columns, add="+")
         self._build_ui()
         self._sync_combo()
         self.after(200, self.refresh)
@@ -180,7 +174,8 @@ class App(tk.Tk):
         self._render_config(self.cfg_rows, self.usage_data)
         if hasattr(self, "tree3"):
             self._render_stealth()
-        self._apply_responsive_columns()
+        if hasattr(self, "tree") and hasattr(self.tree_hscroll, "winfo_exists"):
+            self._autofit_columns(self.tree, self.tree_hscroll)
 
     def _sync_combo(self):
         label = "Auto (follow Hermes)"
@@ -206,10 +201,7 @@ class App(tk.Tk):
         self.apply_theme(palette, meta)
         source = self.meta.get("source", "?")
         skin = self.meta.get("skin", "?")
-        self.status.configure(
-            text=f"Theme: {skin} ({'live' if source == 'engine' else source})",
-            fg=self._c("dim"),
-        )
+        self._flash_status(f"Theme: {skin} ({'live' if source == 'engine' else source})")
 
     def _schedule_poll(self):
         if self._poll_id:
@@ -229,12 +221,9 @@ class App(tk.Tk):
         for widget in list(self.winfo_children()):
             widget.destroy()
         self._build_toolbar()
-        self._build_info_strip()
         self._build_notebook()
         self._build_detail_panel()
-        self._build_options()
         self._build_status()
-        self._build_alerts_bar()
 
     def _build_toolbar(self):
         p = self.palette
@@ -246,6 +235,8 @@ class App(tk.Tk):
         self.info = tk.Label(bar, text="", bg=p["bg"], fg=p["dim"], font=(FONT, SZ_INFO))
         self.info.pack(side="left", padx=(16, 0))
 
+        ttk.Button(bar, text="Settings", command=self.open_settings).pack(side="right", padx=(8, 0))
+
         combo = ttk.Combobox(
             bar, textvariable=self.combo_var, values=self.skins,
             state="readonly", width=24,
@@ -253,30 +244,11 @@ class App(tk.Tk):
         combo.bind("<<ComboboxSelected>>", self._on_skin_select)
         combo.pack(side="right", padx=(8, 0))
 
-        self.set_main_btn = ttk.Button(bar, text="Use as main", command=self.set_main_model)
+        self.set_main_btn = ttk.Button(bar, text="Set main model", command=self.set_main_model)
         self.set_main_btn.state(["disabled"])
         self.set_main_btn.pack(side="right", padx=8)
-        ttk.Button(bar, text="About", command=self.show_about).pack(side="right", padx=8)
-        ttk.Button(bar, text="Copy slug", command=self.copy_selected).pack(side="right", padx=6)
+        ttk.Button(bar, text="Copy model name", command=self.copy_selected).pack(side="right", padx=6)
         ttk.Button(bar, text="Refresh", command=self.refresh).pack(side="right")
-
-    def _build_alerts_bar(self):
-        if not self.alerts:
-            return
-        p = self.palette
-        container = tk.Frame(self, bg=p["border"])
-        container.pack(fill="x", padx=14, pady=(2, 6))
-        for index, alert in enumerate(self.alerts):
-            color = {"critical": p["error"], "warn": p["warn"], "info": p["ok"]}[alert["level"]]
-            strip = tk.Frame(container, bg=color)
-            strip.pack(fill="x", padx=10, pady=6)
-            tk.Label(
-                strip, text=alert["text"], bg=color, fg=p["bg"], font=(FONT, SZ_INFO),
-                anchor="w", padx=10, pady=6,
-            ).pack(side="left", fill="x", expand=True)
-            ttk.Button(strip, text="Dismiss", command=lambda idx=index: self._dismiss_alert(idx)).pack(
-                side="right", padx=8
-            )
 
     def _build_notebook(self):
         self.nb = ttk.Notebook(self)
@@ -312,22 +284,6 @@ class App(tk.Tk):
         )
         self.detail_chips.pack(fill="x")
 
-    def _build_options(self):
-        row = tk.Frame(self, bg=self.palette["bg"])
-        row.pack(fill="x", padx=16, pady=(2, 0))
-        ttk.Checkbutton(
-            row, text="Auto models (15 min)", variable=self.auto_models_var,
-            command=self._apply_timers,
-        ).pack(side="left", padx=(18, 0))
-        ttk.Checkbutton(
-            row, text="Deep check (4 h)", variable=self.deep_var,
-            command=self._apply_timers,
-        ).pack(side="left", padx=(18, 0))
-        ttk.Checkbutton(
-            row, text="Bubbles", variable=self.bubbles_var,
-            command=self._apply_timers,
-        ).pack(side="left", padx=(18, 0))
-
     def _build_catalog_tab(self, parent):
         wrap = tk.Frame(parent, bg=self._c("border"))
         wrap.pack(fill="both", expand=True, padx=0, pady=(2, 0))
@@ -336,13 +292,14 @@ class App(tk.Tk):
         for col in COLS:
             self.tree.heading(col, text=col, anchor="w")
             self.tree.column(col, width=WIDTHS[col], anchor="w")
-        self.tree.column("Model", minwidth=240, stretch=True)
         self.tree.pack(side="left", fill="both", expand=True)
         self.tree.bind("<Double-1>", lambda _e: self.copy_selected())
 
         scroll = ttk.Scrollbar(wrap, orient="vertical", command=self.tree.yview)
         scroll.pack(side="right", fill="y")
-        self.tree.configure(yscrollcommand=scroll.set)
+        self.tree_hscroll = ttk.Scrollbar(wrap, orient="horizontal", command=self.tree.xview)
+        self.tree_hscroll.pack(side="bottom", fill="x")
+        self.tree.configure(yscrollcommand=scroll.set, xscrollcommand=self.tree_hscroll.set)
 
     def _build_config_tab(self, parent):
         p = self.palette
@@ -362,7 +319,6 @@ class App(tk.Tk):
         for col in CFG_COLS:
             self.tree2.heading(col, text=col, anchor="w")
             self.tree2.column(col, width=CFG_WIDTHS[col], anchor="w")
-        self.tree2.column("Notes", minwidth=180, stretch=True)
         self.tree2.pack(side="left", fill="both", expand=True)
         self.tree2.bind("<Double-1>", lambda _e: self.copy_row(self.tree2))
 
@@ -372,7 +328,9 @@ class App(tk.Tk):
 
         scroll = ttk.Scrollbar(inner, orient="vertical", command=self.tree2.yview)
         scroll.pack(side="right", fill="y")
-        self.tree2.configure(yscrollcommand=scroll.set)
+        self.tree2_hscroll = ttk.Scrollbar(inner, orient="horizontal", command=self.tree2.xview)
+        self.tree2_hscroll.pack(side="bottom", fill="x")
+        self.tree2.configure(yscrollcommand=scroll.set, xscrollcommand=self.tree2_hscroll.set)
 
     def _build_stealth_tab(self, parent):
         p = self.palette
@@ -403,8 +361,6 @@ class App(tk.Tk):
         for col in cols:
             self.tree3.heading(col, text=col, anchor="w")
             self.tree3.column(col, width=sizes[col], anchor="w")
-        self.tree3.column("Model", minwidth=200, stretch=True)
-        self.tree3.column("Detail", minwidth=180, stretch=True)
         self.tree3.pack(side="left", fill="both", expand=True)
 
         self.tree3.tag_configure("alive", foreground=p["ok"])
@@ -414,113 +370,146 @@ class App(tk.Tk):
 
         scroll = ttk.Scrollbar(inner, orient="vertical", command=self.tree3.yview)
         scroll.pack(side="right", fill="y")
-        self.tree3.configure(yscrollcommand=scroll.set)
+        self.tree3_hscroll = ttk.Scrollbar(inner, orient="horizontal", command=self.tree3.xview)
+        self.tree3_hscroll.pack(side="bottom", fill="x")
+        self.tree3.configure(yscrollcommand=scroll.set, xscrollcommand=self.tree3_hscroll.set)
 
     def _build_status(self):
         self.status = tk.Label(
-            self, text="Checking...", bg=self._c("bg"), fg=self._c("dim"),
+            self, text="Connecting…", bg=self._c("bg"), fg=self._c("dim"),
             font=(FONT, SZ_INFO), anchor="w",
         )
         self.status.pack(fill="x", padx=16, pady=(2, 12))
 
-    def show_about(self):
+    def _refresh_status(self):
+        if not hasattr(self, "status"):
+            return
+        parts = []
+        if self.catalog_meta:
+            parts.append(f"{self.catalog_meta.get('free_count')} free models of {self.catalog_meta.get('catalog_rows')} total")
+        if hasattr(self, "last_models"):
+            parts.append(f"catalog updated {self.last_models}")
+        if hasattr(self, "last_deep"):
+            parts.append(f"Hermes config checked {self.last_deep}")
+        parts.append(f"stealth watch: {len(self.stealth_rows)}")
+        self.status.configure(text="   ·   ".join(parts) or "Connecting…")
+
+    def _flash_status(self, message, ms=2600):
+        if not hasattr(self, "status"):
+            return
+        self.status.configure(text=message, fg=self._c("ok"))
+        if getattr(self, "_flash_after_id", None):
+            self.after_cancel(self._flash_after_id)
+        self._flash_after_id = self.after(ms, self._refresh_status)
+
+    # ---------- settings / about ----------
+
+    def open_settings(self):
         p = self.palette
         win = tk.Toplevel(self)
-        win.title("About Nous Free Models")
+        win.title("Settings — Nous Free Models")
         win.configure(bg=p["bg"])
         win.resizable(False, False)
         win.transient(self)
         win.grab_set()
 
-        tk.Label(win, text="Nous Free Models", bg=p["bg"], fg=p["fg"],
-                 font=("Segoe UI Semibold", 20)).pack(pady=(20, 2))
-        tk.Label(win, text="Created by luxotek", bg=p["bg"], fg=p["accent"],
-                 font=("Segoe UI Semibold", 14)).pack(pady=(0, 10))
+        sec = tk.Label(win, text="Preferences", bg=p["bg"], fg=p["accent"],
+                       font=("Segoe UI Semibold", 14), anchor="w")
+        sec.pack(fill="x", padx=24, pady=(18, 6))
+        prefs = tk.Frame(win, bg=p["bg"])
+        prefs.pack(fill="x", padx=28)
+        ttk.Checkbutton(prefs, text="Auto models (15 min)", variable=self.auto_models_var,
+                        command=self._apply_timers).pack(anchor="w", pady=2)
+        ttk.Checkbutton(prefs, text="Deep check (4 h)", variable=self.deep_var,
+                        command=self._apply_timers).pack(anchor="w", pady=2)
+        ttk.Checkbutton(prefs, text="Bubbles", variable=self.bubbles_var,
+                        command=self._apply_timers).pack(anchor="w", pady=2)
 
-        lines = [
-            "A live free-model catalog plus a Hermes configuration check.",
-            "Data: Nous Portal + inference APIs, local Hermes config and logs.",
-            "",
+        sec = tk.Label(win, text="Alert history", bg=p["bg"], fg=p["accent"],
+                       font=("Segoe UI Semibold", 14), anchor="w")
+        sec.pack(fill="x", padx=24, pady=(14, 6))
+        hist = tk.Frame(win, bg=p["border"])
+        hist.pack(fill="both", expand=True, padx=24)
+        inner = tk.Frame(hist, bg=p["card"])
+        inner.pack(fill="both", expand=True)
+        text = tk.Text(inner, height=7, bg=p["card"], fg=p["fg"], font=(FONT, 12),
+                       relief="flat", wrap="word", padx=8, pady=6)
+        text.pack(side="left", fill="both", expand=True)
+        sb = ttk.Scrollbar(inner, orient="vertical", command=text.yview)
+        sb.pack(side="right", fill="y")
+        text.configure(yscrollcommand=sb.set)
+        for level, color_key in (("critical", "error"), ("warn", "warn"), ("ok", "ok")):
+            text.tag_configure(level, foreground=p[color_key])
+        entries = list(reversed(self.alert_history[-20:]))
+        if not entries:
+            text.insert("end", "No alerts yet.\n")
+        for entry in entries:
+            text.insert("end", f"{entry['ts']}  {entry['text']}\n", entry["level"])
+        text.configure(state="disabled")
+
+        sec = tk.Label(win, text="About", bg=p["bg"], fg=p["accent"],
+                       font=("Segoe UI Semibold", 14), anchor="w")
+        sec.pack(fill="x", padx=24, pady=(14, 6))
+        about = tk.Frame(win, bg=p["bg"])
+        about.pack(fill="x", padx=28)
+        tk.Label(about, text="Created by luxotek", bg=p["bg"], fg=p["fg"],
+                 font=("Segoe UI Semibold", 13)).pack(anchor="w")
+        for line in (
+            "Live free-model catalog plus a Hermes configuration check.",
             "Built with AI assistance (Hermes Agent) — see NOTICE.md.",
-            "Source-available, personal use only; not for sale or redistribution",
-            "without express written permission from luxotek. See LICENSE.",
-        ]
-        for line in lines:
-            if line:
-                tk.Label(win, text=line, bg=p["bg"], fg=p["dim"],
-                         font=(FONT, 13), justify="left", wraplength=520).pack(fill="x", padx=32)
-            else:
-                tk.Label(win, text="", bg=p["bg"]).pack(pady=4)
+            "Source-available, personal use only; not for sale or redistribution.",
+        ):
+            tk.Label(about, text=line, bg=p["bg"], fg=p["dim"], font=(FONT, 12),
+                     anchor="w", justify="left").pack(fill="x")
+        links = tk.Frame(about, bg=p["bg"])
+        links.pack(fill="x", pady=(6, 0))
+        for label in ("LICENSE", "NOTICE.md"):
+            link = tk.Label(links, text=label, bg=p["bg"], fg=p["accent"],
+                            font=("Segoe UI Semibold", 12), cursor="hand2")
+            link.pack(side="left", padx=(0, 14))
+            link.bind("<Button-1>", lambda _e, f=label: self._open_doc(f))
 
-        ttk.Button(win, text="Close", command=win.destroy).pack(pady=(14, 18))
+        ttk.Button(win, text="Close", command=win.destroy).pack(pady=(12, 16))
         win.bind("<Escape>", lambda _e: win.destroy())
         win.update_idletasks()
-        width = max(win.winfo_width(), 560)
-        height = win.winfo_height()
+        width = max(win.winfo_width(), 540)
+        height = min(win.winfo_height(), self.winfo_screenheight() - 80)
         x = self.winfo_rootx() + (self.winfo_width() - width) // 2
-        y = self.winfo_rooty() + (self.winfo_height() - height) // 2
+        y = self.winfo_rooty() + max((self.winfo_height() - height) // 2, 0)
         win.geometry(f"{width}x{height}+{x}+{y}")
 
-    # ---------- info strip / empty states / bubbles ----------
+    def _open_doc(self, filename):
+        path = os.path.join(os.path.dirname(os.path.abspath(__file__)), filename)
+        try:
+            os.startfile(path)
+        except Exception:
+            webbrowser.open("https://github.com/luxotek/herms-free-mode")
 
-    def _build_info_strip(self):
-        p = self.palette
-        self.strip = tk.Frame(self, bg=p["bg"])
-        self.strip.pack(fill="x", padx=14, pady=(2, 2))
-        self.info_summary = tk.Label(
-            self.strip, text="", bg=p["bg"], fg=p["dim"], font=(FONT, SZ_INFO), anchor="w",
-        )
-        self.info_summary.pack(side="left")
-        self.history_btn = ttk.Button(self.strip, text="History", command=self.toggle_history)
-        self.history_btn.pack(side="right")
+    # ---------- column fitting ----------
 
-        self.history_box = tk.Frame(self, bg=p["border"])
-        if self.history_open:
-            self._render_history()
-            self.history_box.pack(fill="x", padx=14, pady=(0, 4), after=self.strip)
-        self._refresh_info_strip()
-
-    def toggle_history(self):
-        self.history_open = not self.history_open
-        if self.history_open:
-            self._render_history()
-            self.history_box.pack(fill="x", padx=14, pady=(0, 4), after=self.strip)
+    def _autofit_columns(self, tree, hscroll):
+        font = getattr(self, "_measure_font", None) or tkfont.Font(family=FONT, size=SZ_TREE)
+        cols = tree["columns"]
+        items = tree.get_children()
+        total = 0
+        for index, col in enumerate(cols):
+            width = font.measure(str(tree.heading(col)["text"])) + 24
+            for item in items:
+                values = tree.item(item)["values"]
+                if index < len(values):
+                    width = max(width, font.measure(str(values[index])) + 24)
+            cap = 460 if col in ("Model", "Detail") else 300
+            width = min(max(width, 64), cap)
+            tree.column(col, width=width, stretch=False)
+            total += width
+        tree.update_idletasks()
+        viewport = tree.winfo_width() - 4
+        if viewport > 1 and total <= viewport:
+            hscroll.pack_forget()
         else:
-            self.history_box.pack_forget()
-        self._refresh_info_strip()
+            hscroll.pack(side="bottom", fill="x")
 
-    def _render_history(self):
-        for child in list(self.history_box.winfo_children()):
-            child.destroy()
-        p = self.palette
-        entries = list(reversed(self.alert_history[-8:]))
-        if not entries:
-            tk.Label(self.history_box, text="No alerts yet.", bg=p["bg"], fg=p["dim"],
-                     font=(FONT, SZ_INFO)).pack(anchor="w", padx=10, pady=6)
-            return
-        for entry in entries:
-            color = {"critical": p["error"], "warn": p["warn"], "ok": p["ok"]}.get(
-                entry["level"], p["accent"]
-            )
-            row = tk.Frame(self.history_box, bg=p["bg"])
-            row.pack(fill="x", padx=10, pady=(4, 0))
-            tk.Label(row, text=entry["ts"], bg=p["bg"], fg=p["dim"],
-                     font=(FONT, 12)).pack(side="left")
-            tk.Label(row, text=entry["text"], bg=p["bg"], fg=color, font=(FONT, 13),
-                     anchor="w", justify="left", wraplength=900).pack(side="left", padx=(8, 0))
-
-    def _refresh_info_strip(self):
-        if not hasattr(self, "info_summary"):
-            return
-        parts = []
-        if self.catalog_meta:
-            parts.append(f"{self.catalog_meta.get('free_count')} free of {self.catalog_meta.get('catalog_rows')}")
-        if hasattr(self, "last_deep"):
-            parts.append(f"deep {self.last_deep}")
-        parts.append(f"stealth {len(self.stealth_rows)}")
-        self.info_summary.configure(text="   ·   ".join(parts) or "ready")
-        count = len(self.alert_history)
-        self.history_btn.configure(text=f"History ({count})" if count else "History")
+    # ---------- empty states / bubbles ----------
 
     def _empty_overlay(self, key, parent, title, lines):
         self._clear_empty(key)
@@ -546,7 +535,6 @@ class App(tk.Tk):
         ts = datetime.datetime.now().strftime("%H:%M")
         self.alert_history.append({"ts": ts, "level": level, "text": text})
         self.alert_history = self.alert_history[-20:]
-        self._refresh_info_strip()
 
     def _notify(self, title, message, level="info"):
         if self.bubbles is not None:
@@ -657,12 +645,7 @@ class App(tk.Tk):
                 ["Nothing returned for model.default, auxiliary pins, or fallbacks.",
                  "Tip: anything pinned here is classified FREE / PAID / MISSING."],
             )
-
-    def _status_line(self):
-        free = ""
-        if self.catalog_meta:
-            free = f" · {self.catalog_meta.get('free_count')} free of {self.catalog_meta.get('catalog_rows')}"
-        return f"Models {self.last_models} · Config {self.last_deep}{free}"
+        self._autofit_columns(self.tree2, self.tree2_hscroll)
 
     def _show(self, models, meta, cfg_rows, usage):
         self._busy = False
@@ -684,6 +667,7 @@ class App(tk.Tk):
                         ["The Portal + inference union came back empty.",
                          "Tip: check your login with `hermes setup`, then hit Refresh."],
                     )
+                self._autofit_columns(self.tree, self.tree_hscroll)
             self.last_models = stamp
         if usage is not None:
             self._render_config(cfg_rows, usage)
@@ -692,9 +676,8 @@ class App(tk.Tk):
             self._evaluate_alerts(cfg_rows, usage, stamp)
             self._evaluate_active_alert(usage)
 
-        self.status.configure(text=self._status_line(), fg=self._c("ok"))
+        self._refresh_status()
         self.info.configure(text="account: free tier")
-        self._refresh_info_strip()
 
     def _evaluate_alerts(self, cfg_rows, usage, stamp):
         free_names = {m["name"] for m in self.models}
@@ -703,14 +686,12 @@ class App(tk.Tk):
             self.ui.get("statuses", {}), cfg_rows, free_names, catalog_ids
         )
         if new_alerts:
-            self.alerts.extend(new_alerts)
             self.ui["statuses"] = current
             save_ui_state(self.ui)
             alerts.flash_taskbar(self)
             for alert in new_alerts:
                 self._record_history(alert["level"], alert["text"])
                 self._notify("Model alert", alert["text"], alert["level"])
-            self._rebuild()
 
     def _evaluate_active_alert(self, usage):
         last = usage.get("last")
@@ -720,11 +701,9 @@ class App(tk.Tk):
         if last not in self.models and last not in self.catalog_meta.get("catalog_ids", []):
             if last != self._last_alerted_active:
                 text = f"Active model {last} is no longer available"
-                self.alerts.append({"level": "critical", "text": text})
                 self._record_history("critical", text)
                 self._notify("Active model gone", text, "critical")
                 self._last_alerted_active = last
-                self._rebuild()
 
     def _on_tree_select(self, event=None):
         tree = getattr(event, "widget", None) or getattr(self, "tree", None)
@@ -771,26 +750,10 @@ class App(tk.Tk):
         if self.set_main_btn is not None:
             self.set_main_btn.state(["!disabled"])
 
-    def _apply_responsive_columns(self, _event=None):
-        width = self.winfo_width()
-        specs = (
-            (getattr(self, "tree", None), COLS, "tree"),
-            (getattr(self, "tree2", None), CFG_COLS, "tree2"),
-            (getattr(self, "tree3", None), STEALTH_COLS, "tree3"),
-        )
-        for tree, cols, key in specs:
-            if tree is None:
-                continue
-            try:
-                if not tree.winfo_exists():
-                    continue
-            except Exception:
-                continue
-            hidden = {col for col, need in RESPONSIVE[key] if width < need}
-            tree.configure(displaycolumns=[c for c in cols if c not in hidden])
-
     def _show_error(self, error):
         self._busy = False
+        if getattr(self, "_flash_after_id", None):
+            self.after_cancel(self._flash_after_id)
         self.status.configure(text=f"Error: {error}", fg=self._c("error"))
         self.info.configure(text="")
         self._notify("Refresh failed", str(error)[:160], "critical")
@@ -817,16 +780,14 @@ class App(tk.Tk):
             )
         except Exception as exc:  # noqa: BLE001
             messagebox.showerror("Set main model failed", str(exc))
+            self._flash_status("Set main model failed")
             return
         if proc.returncode == 0:
-            self.status.configure(text=f"Main model set to {slug}", fg=self._c("ok"))
+            self._flash_status(f"Main model set to {slug}")
             self.refresh_deep()
         else:
             messagebox.showerror("Set main model failed", (proc.stderr or proc.stdout or "unknown error").strip())
-
-    def _dismiss_alert(self, index):
-        self.alerts.pop(index)
-        self._rebuild()
+            self._flash_status("Set main model failed")
 
     def copy_selected(self):
         tree = self.tree
@@ -836,7 +797,7 @@ class App(tk.Tk):
         self.clipboard_clear()
         self.clipboard_append(vals[0])
         self.update()
-        self.info.configure(text="Copied: " + vals[0])
+        self._flash_status("Copied: " + vals[0])
 
     def copy_row(self, tree):
         if not tree.selection():
@@ -845,7 +806,7 @@ class App(tk.Tk):
         self.clipboard_clear()
         self.clipboard_append(vals[1])
         self.update()
-        self.info.configure(text="Copied: " + vals[1])
+        self._flash_status("Copied: " + vals[1])
 
     # ---------- stealth ----------
 
@@ -890,6 +851,7 @@ class App(tk.Tk):
                 ["Stealth slugs are mined from logs/agent.log.",
                  "Tip: run Rescan log after using an off-catalog model."],
             )
+        self._autofit_columns(self.tree3, self.tree3_hscroll)
 
     def rescan_log(self):
         if self._mining:
@@ -949,7 +911,6 @@ class App(tk.Tk):
         alive = sum(1 for r in self.stealth_rows if r["state"] == "alive")
         total = len(self.stealth_rows)
         self.stealth_info.configure(text=f"Done · {alive}/{total} alive")
-        self._refresh_info_strip()
         if total:
             self._notify("Stealth probes", f"{alive}/{total} alive", "ok" if alive else "warn")
 

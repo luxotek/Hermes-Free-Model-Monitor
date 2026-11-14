@@ -21,8 +21,6 @@ Double-click **`run.ps1`** (right-click > Run with PowerShell) or **`run.cmd`**.
   flags, source); *In Hermes* = everything Hermes has pinned (`model.default`,
   auxiliary task models, fallback chain) classified as `FREE` / `PAID` /
   `MISSING`, plus recent per-model API call counts from `logs/agent.log`.
-- **Side by side**: the checkbox under the content area splits the window into
-  both tables at once, draggable divider. The choice persists in `ui_state.json`.
 - **Stealth**: off-catalog models mined from `logs/agent.log` (`stealth/*` slugs),
   with mention counts and last-seen timestamps. Buttons: *Probe selected* /
   *Probe all* send a one-token chat request to test whether each model still
@@ -31,16 +29,19 @@ Double-click **`run.ps1`** (right-click > Run with PowerShell) or **`run.cmd`**.
   429, any `alternates` listed in the error are added to the watchlist as new
   rows (origin `429 alternates`). Watches and probe results persist in
   `stealth_state.json` (gitignored).
+- **Detail panel**: click any row (any tab) to see its full info stacked under
+  the list — no more squinting at truncated columns.
 - **Bubbles**: self-contained toast cards in the window's bottom-right corner
   (UniGetUI-style): newest at the bottom, stack upward, auto-dismiss by severity,
-  click to close. Toggle with the **Bubbles** checkbox; fired on model alerts,
-  active-model loss, probe summaries, and refresh errors.
-- **Info strip + history**: slim status line under the toolbar
-  (`N free of M · deep HH:MM · stealth N`) with a `History (N)` button that expands
-  a severity-colored list of recent alerts.
+  click to close. Fired on model alerts, active-model loss, probe summaries, and
+  refresh errors. Alerts also land in **Settings → Alert history**.
+- **Settings** (top-right button): preferences (auto-refresh timers, bubbles),
+  alert history, and the About block with links to `LICENSE` / `NOTICE.md`.
+- **Columns auto-fit** their content; if the window is narrower than the table,
+  a horizontal scrollbar appears (no dead space).
 - **Empty states**: panes with nothing to show display a centered tip block instead
   of dead whitespace.
-- **Copy slug** (or double-click any row) copies the model string — e.g.
+- **Copy model name** (or double-click any row) copies the model string — e.g.
   `meituan/longcat-2.5:free` — ready to paste into `/model ...` or a config.
 
 ## What refreshes when
@@ -49,7 +50,8 @@ Double-click **`run.ps1`** (right-click > Run with PowerShell) or **`run.cmd`**.
 - **Auto models (15 min)**: only the free-model catalog, so the list stays
   current without touching your Hermes config or logs.
 - **Deep check (4 h)**: only the Hermes config + usage counts.
-- The status line shows how fresh each half is: `Models HH:MM · Config HH:MM`.
+- The bottom status line shows it plainly: `N free models of M total · catalog
+  updated HH:MM · Hermes config checked HH:MM · stealth watch: N`.
 
 ## Themes
 
@@ -81,7 +83,7 @@ an auth error, re-login to the Portal through Hermes (`hermes setup`) and try ag
 
 | File | Purpose |
 |---|---|
-| `app.pyw` | The tkinter window (tabs/split, toolbar, timers, About) |
+| `app.pyw` | The tkinter window (tabs, detail panel, toolbar, timers, Settings/About) |
 | `nous_core.py` | Auth lookup + the two API calls + union logic |
 | `hermes_state.py` | Reads Hermes config via `hermes config get`; parses `agent.log` usage |
 | `theme.py` | Skin engine + desktop preset palettes, override persistence |
