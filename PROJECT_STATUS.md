@@ -28,6 +28,10 @@ Remote: **https://github.com/luxotek/Hermes-Free-Model-Monitor** (renamed from `
 - [x] 4. Stealth watch (log-mined watchlist, liveness probes, 429 `alternates` discovery)
 - [x] 5a. InfoSpace (alert history strip, contextual empty states)
 - [x] 5b. Bubble notifications (app-anchored bottom-right stack)
+- [ ] 7. Startup requirement check: detect missing Hermes install/login (`hermes` CLI absent,
+      no `auth.json`, `HERMES_HOME` unreachable) and clearly notify instead of failing silently
+- [ ] 8. Linux version: portable paths (XDG/`$HERMES_HOME`), `xdg-open` fallback, skip
+      Windows-only bits (taskbar flash, Start Menu shortcut), build/test in WSL2
 - [ ] 6. Parked: local model scan/load — SimSense explicitly out of scope
 
 ## Stage 4 complete (2026-11-14)
