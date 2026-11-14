@@ -11,7 +11,8 @@ Remote: **https://github.com/luxotek/herms-free-mode** (pushed)
 - [x] 0. Safety net — git repo, status file, `.gitignore`
 - [x] 1. Theme follow (Hermes skin engine) + manual override picker
 - [x] 2. Config vs available comparison (default, aux pins, fallback chain, actual usage)
-- [ ] 3. Alerts + model actions (death notices, set main model, copy slug, session hint)
+- [x] 3. Alerts + model actions (death notices, set main model, copy slug, session hint)
+- [x] 3b. Active-model death alert + return suppression
 - [ ] 4. Stealth watch (log-mined watchlist, liveness probes, 429 `alternates` discovery)
 - [ ] 5. Parked: local model scan/load — SimSense explicitly out of scope
 
