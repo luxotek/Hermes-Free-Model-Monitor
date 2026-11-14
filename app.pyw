@@ -21,8 +21,8 @@ class App(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("Nous Free Models")
-        self.geometry("1000x560")
-        self.minsize(820, 420)
+        self.geometry("1060x620")
+        self.minsize(880, 460)
         self.models = []
         self.cfg_rows = []
         self.usage_data = {"counts": {}, "fallbacks": [], "last": None}
@@ -55,21 +55,21 @@ class App(tk.Tk):
         style.theme_use("clam")
         style.configure(
             "Treeview", background=p["card"], foreground=p["fg"],
-            fieldbackground=p["card"], borderwidth=0, rowheight=26,
-            font=("Segoe UI", 10),
+            fieldbackground=p["card"], borderwidth=0, rowheight=32,
+            font=("Segoe UI", 12),
         )
         style.configure(
             "Treeview.Heading", background=p["head_bg"], foreground=p["head_fg"],
-            relief="flat", font=("Segoe UI Semibold", 9), padding=(6, 4),
+            relief="flat", font=("Segoe UI Semibold", 11), padding=(6, 4),
         )
         style.map(
             "Treeview",
             background=[("selected", p["selection"])],
             foreground=[("selected", p["fg"])],
         )
-        style.configure("TButton", background=p["head_bg"], foreground=p["fg"], borderwidth=0, padding=6)
+        style.configure("TButton", background=p["head_bg"], foreground=p["fg"], borderwidth=0, padding=9)
         style.map("TButton", background=[("active", p["border"])])
-        style.configure("TCheckbutton", background=p["bg"], foreground=p["dim"], font=("Segoe UI", 9))
+        style.configure("TCheckbutton", background=p["bg"], foreground=p["dim"], font=("Segoe UI", 11))
         style.map("TCheckbutton", background=[("active", p["bg"])])
         style.configure("Vertical.TScrollbar", background=p["head_bg"], troughcolor=p["bg"], borderwidth=0)
         style.configure(
@@ -80,7 +80,7 @@ class App(tk.Tk):
         style.configure("TNotebook", background=p["bg"], borderwidth=0)
         style.configure(
             "TNotebook.Tab", background=p["head_bg"], foreground=p["dim"],
-            padding=(12, 5),
+            padding=(14, 7),
         )
         style.map(
             "TNotebook.Tab",
@@ -163,8 +163,8 @@ class App(tk.Tk):
         bar.pack(fill="x", padx=12, pady=(12, 4))
 
         tk.Label(bar, text="Nous Free Models", bg=p["bg"], fg=p["fg"],
-                 font=("Segoe UI Semibold", 14)).pack(side="left")
-        self.info = tk.Label(bar, text="", bg=p["bg"], fg=p["dim"], font=("Segoe UI", 9))
+                 font=("Segoe UI Semibold", 17)).pack(side="left")
+        self.info = tk.Label(bar, text="", bg=p["bg"], fg=p["dim"], font=("Segoe UI", 11))
         self.info.pack(side="left", padx=(14, 0))
 
         combo = ttk.Combobox(
@@ -205,7 +205,7 @@ class App(tk.Tk):
 
         self.usage = tk.Label(
             wrap, text="Recent API calls: ...", bg=p["bg"], fg=p["dim"],
-            font=("Segoe UI", 9), anchor="w",
+            font=("Segoe UI", 11), anchor="w",
         )
         self.usage.pack(fill="x", padx=4, pady=(4, 2))
 
@@ -231,7 +231,7 @@ class App(tk.Tk):
     def _build_status(self):
         self.status = tk.Label(
             self, text="Checking...", bg=self._c("bg"), fg=self._c("dim"),
-            font=("Segoe UI", 9), anchor="w",
+            font=("Segoe UI", 11), anchor="w",
         )
         self.status.pack(fill="x", padx=14, pady=(0, 10))
 
