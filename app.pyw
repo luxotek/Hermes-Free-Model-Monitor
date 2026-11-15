@@ -17,7 +17,7 @@ import nous_core
 import stealth
 import theme
 
-APP_NAME = "Hermes Free Model Monitor"
+APP_NAME = "HFMM-beta"
 
 FONT = "Segoe UI"
 SZ_TITLE = 20
