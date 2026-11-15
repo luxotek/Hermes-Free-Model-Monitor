@@ -36,6 +36,10 @@ Remote: **https://github.com/luxotek/Hermes-Free-Model-Monitor** (renamed from `
       (`hermes config get` ×4 at start/refresh + `config set` on Set main model):
       pass `CREATE_NO_WINDOW`/prefer `hermes.exe`, or read `config.yaml` directly for
       reads and keep only hidden writes
+- [ ] 10. OpenRouter free models: Settings checkbox to include OpenRouter's $0 list;
+       detect an installed OpenRouter token in Hermes auth; enable **Set main model**
+       only for OpenRouter rows when the token exists, otherwise leave the button
+       greyed for those selections
 - [ ] 6. Parked: local model scan/load — SimSense explicitly out of scope
 
 ## Stage 4 complete (2026-11-14)
