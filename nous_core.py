@@ -101,6 +101,8 @@ def _catalog_info(model):
         "video": "video" in modalities,
         "temp": _temp_type(slug),
         "end": model.get("expiration_date") or "",
+        "output": (model.get("top_provider") or {}).get("max_completion_tokens"),
+        "created": model.get("created"),
     }
 
 
@@ -222,6 +224,8 @@ def fetch_free_models(permanent_only=True):
         name = record["name"]
         record.setdefault("temp", _temp_type(name))
         record.setdefault("end", "")
+        record.setdefault("output", None)
+        record.setdefault("created", None)
         existing = by_name.get(name)
         if existing is None:
             merged = dict(record, sources={source})
@@ -239,6 +243,10 @@ def fetch_free_models(permanent_only=True):
             existing["temp"] = record["temp"]
         if not existing["end"]:
             existing["end"] = record["end"]
+        if not existing["output"]:
+            existing["output"] = record["output"]
+        if not existing["created"]:
+            existing["created"] = record["created"]
 
     for rec in portal.get("freeRecommendedModels") or []:
         slug = rec.get("modelName")
@@ -254,6 +262,8 @@ def fetch_free_models(permanent_only=True):
                 "vision": bool(rec.get("isVisionModel")) or catalog_hit.get("vision", False),
                 "video": catalog_hit.get("video", False),
                 "compaction": bool(rec.get("isCompactionModel")),
+                "output": catalog_hit.get("output"),
+                "created": catalog_hit.get("created"),
             },
             "portal",
         )
@@ -272,6 +282,8 @@ def fetch_free_models(permanent_only=True):
                 "vision": bool(rec.get("isVisionModel")) or catalog_hit.get("vision", False),
                 "video": catalog_hit.get("video", False),
                 "compaction": bool(rec.get("isCompactionModel")),
+                "output": catalog_hit.get("output"),
+                "created": catalog_hit.get("created"),
             },
             "portal",
         )
@@ -327,6 +339,8 @@ def fetch_free_models(permanent_only=True):
         info.setdefault("compaction", rec.get("compaction", False))
         info.setdefault("temp", rec.get("temp"))
         info.setdefault("end", rec.get("end"))
+        info.setdefault("output", rec.get("output"))
+        info.setdefault("created", rec.get("created"))
 
     if permanent_only:
         results = [r for r in results if not r.get("temp") and not r.get("end")]

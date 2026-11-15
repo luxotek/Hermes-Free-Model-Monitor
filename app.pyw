@@ -24,8 +24,9 @@ SZ_BODY = 13
 SZ_TREE = 14
 SZ_HEAD = 13
 
-COLS = ("Model", "Context", "Inputs", "Price", "Flags", "Source")
-WIDTHS = {"Model": 360, "Context": 110, "Inputs": 160, "Price": 100, "Flags": 210, "Source": 120}
+COLS = ("Model", "Context", "Inputs", "Output", "Released", "Flags", "Source")
+WIDTHS = {"Model": 360, "Context": 110, "Inputs": 160, "Output": 110,
+          "Released": 110, "Flags": 200, "Source": 120}
 CFG_COLS = ("Role", "Model", "Provider", "Context", "Flags", "Temp", "Status", "Notes")
 CFG_WIDTHS = {
     "Role": 190, "Model": 340, "Provider": 90, "Context": 110,
@@ -693,6 +694,17 @@ class App(tk.Tk):
             return f"ends {end}"
         return "-"
 
+    @staticmethod
+    def _released_text(info):
+        """Release date from the catalog's `created` timestamp."""
+        ts = info.get("created")
+        if not ts:
+            return "-"
+        try:
+            return datetime.datetime.fromtimestamp(int(ts), datetime.UTC).strftime("%Y-%m-%d")
+        except (TypeError, ValueError, OSError):
+            return "-"
+
     def _insert(self, model):
         flags = []
         if model["vision"]:
@@ -702,13 +714,15 @@ class App(tk.Tk):
         if model["compaction"]:
             flags.append("compaction")
         ctx = model["context"]
+        out = model.get("output")
         self.tree.insert(
             "", "end",
             values=(
                 model["name"],
                 f"{ctx:,}" if ctx else "?",
                 model["inputs"],
-                "$0.00 / 1M",
+                f"{out:,}" if out else "?",
+                self._released_text(model),
                 ", ".join(flags) or "-",
                 model["source"],
             ),
@@ -852,8 +866,9 @@ class App(tk.Tk):
         if tree is self.tree:
             self.selected_slug = values[0]
             title = values[0]
-            chips = (f"Context {values[1]}   ·   Inputs {values[2]}   ·   Price {values[3]}"
-                     f"   ·   Flags {values[4]}   ·   Source {values[5]}")
+            chips = (f"Context {values[1]}   ·   Inputs {values[2]}   ·   Output {values[3]}"
+                     f"   ·   Released {values[4]}   ·   Flags {values[5]}"
+                     f"   ·   Source {values[6]}")
         elif tree is self.tree2:
             self.selected_slug = values[1]
             status = values[6].lower()
