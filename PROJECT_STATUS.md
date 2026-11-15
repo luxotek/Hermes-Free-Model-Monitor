@@ -32,6 +32,10 @@ Remote: **https://github.com/luxotek/Hermes-Free-Model-Monitor** (renamed from `
       no `auth.json`, `HERMES_HOME` unreachable) and clearly notify instead of failing silently
 - [ ] 8. Linux version: portable paths (XDG/`$HERMES_HOME`), `xdg-open` fallback, skip
       Windows-only bits (taskbar flash, Start Menu shortcut), build/test in WSL2
+- [ ] 9. Hide/eliminate the console windows spawned when HFMM shells out to `hermes`
+      (`hermes config get` ×4 at start/refresh + `config set` on Set main model):
+      pass `CREATE_NO_WINDOW`/prefer `hermes.exe`, or read `config.yaml` directly for
+      reads and keep only hidden writes
 - [ ] 6. Parked: local model scan/load — SimSense explicitly out of scope
 
 ## Stage 4 complete (2026-11-14)
