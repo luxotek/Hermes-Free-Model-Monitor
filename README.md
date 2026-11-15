@@ -23,9 +23,10 @@ Double-click **`run.ps1`** (right-click > Run with PowerShell) or **`run.cmd`**.
 
 ## Views
 
-- **Tabs** (default): *Free models* = the live catalog (context, inputs, price,
-  flags, source), permanent free models only — previews and anything with an
-  expiration date are left off so the list stays safe to build a chain on;
+- **Tabs** (default): *Free models* = the live catalog (context, inputs, output,
+  released, flags, source), permanent free models only — previews and anything
+  with an expiration date are left off so the list stays safe to build a chain
+  on;
   *Hermes config* = everything Hermes has pinned (`model.default`, auxiliary
   task models, fallback chain) classified as `FREE` / `PAID` / `MISSING`, with
   context and flags (vision / video / compaction) filled in from the catalog
