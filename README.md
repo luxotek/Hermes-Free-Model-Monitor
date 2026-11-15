@@ -20,7 +20,7 @@ Double-click **`run.ps1`** (right-click > Run with PowerShell) or **`run.cmd`**.
 ## Views
 
 - **Tabs** (default): *Free models* = the live catalog (context, inputs, price,
-  flags, source); *In Hermes* = everything Hermes has pinned (`model.default`,
+  flags, source); *Hermes config* = everything Hermes has pinned (`model.default`,
   auxiliary task models, fallback chain) classified as `FREE` / `PAID` /
   `MISSING`, plus recent per-model API call counts from `logs/agent.log`.
 - **Stealth**: off-catalog models mined from `logs/agent.log` (`stealth/*` slugs),
@@ -39,12 +39,23 @@ Double-click **`run.ps1`** (right-click > Run with PowerShell) or **`run.cmd`**.
   refresh errors. Alerts also land in **Settings → Alert history**.
 - **Settings** (top-right button): preferences (auto-refresh timers, bubbles),
   alert history, and the About block with links to `LICENSE` / `NOTICE.md`.
+- **Window geometry** is remembered: it reopens at the size and position you
+  left it in (saved in `ui_state.json`, debounced while resizing). If the saved
+  spot is off-screen, it keeps the size and centers instead.
 - **Columns auto-fit** their content; if the window is narrower than the table,
   a horizontal scrollbar appears (no dead space).
 - **Empty states**: panes with nothing to show display a centered tip block instead
   of dead whitespace.
-- **Copy model name** (or double-click any row) copies the model string — e.g.
-  `meituan/longcat-2.5:free` — ready to paste into `/model ...` or a config.
+- **Fallback chain editing**
+  - *Free models* tab: right-click a model → **Add as new fallback** (at the end
+    or at the top) or **Replace fallback** (pick the slot whose model to swap).
+  - *Hermes config* tab: drag fallback rows into a new order (main and aux rows
+    stay put), or right-click a fallback row → **Remove fallback #N**.
+  - Changes are written with `hermes config set fallback_providers`; replaced
+    entries keep any extra keys (`base_url`, `api_key`, …).
+- **Copy model name**: right-click a row (or double-click it) to copy the model
+  string — e.g. `meituan/longcat-2.5:free` — ready to paste into `/model ...`
+  or a config.
 
 ## What refreshes when
 

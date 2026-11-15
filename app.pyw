@@ -3,7 +3,7 @@
 import datetime
 import json
 import os
-import subprocess
+import re
 import threading
 import tkinter as tk
 import tkinter.font as tkfont
@@ -64,21 +64,25 @@ class App(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title(APP_NAME)
-        screen_w = self.winfo_screenwidth()
-        screen_h = self.winfo_screenheight()
-        width = max(1100, min(int(screen_w * 0.78), 1400))
-        height = max(640, min(int(screen_h * 0.85), 860))
-        self.geometry(f"{width}x{height}+{(screen_w - width) // 2}+{max((screen_h - height) // 2, 0)}")
         self.minsize(960, 540)
+        self.ui = load_ui_state()
+        self._apply_geometry()
+        self._geom_after_id = None
+        self.bind("<Configure>", self._on_resize)
+        self.protocol("WM_DELETE_WINDOW", self._on_close)
         self.models = []
         self.cfg_rows = []
+        self.fallback_entries = []
+        self._fallback_busy = False
+        self._fb_rows = []
+        self._fb_chain = {}
+        self._drag_fb = None
         self.usage_data = {"counts": {}, "fallbacks": [], "last": None}
         self.palette = dict(theme.FALLBACK_PALETTE)
         self.meta = {}
         self.catalog_meta = {}
         self.choice = theme.load_choice()
         self.skins = ["Auto (follow Hermes)"] + theme.skin_names()
-        self.ui = load_ui_state()
         self.selected_slug = None
         self._last_alerted_active = None
         self._flash_after_id = None
@@ -121,6 +125,52 @@ class App(tk.Tk):
         threading.Thread(target=self._mine_worker, daemon=True).start()
         if self.auto_probe_var.get():
             self.stealth_after_id = self.after(STEALTH_PROBE_MS, self._stealth_tick)
+
+    # ---------- window geometry ----------
+
+    def _apply_geometry(self):
+        """Reopen where (and how big) the window was last time, else size to screen."""
+        screen_w = self.winfo_screenwidth()
+        screen_h = self.winfo_screenheight()
+        default_w = max(1100, min(int(screen_w * 0.78), 1400))
+        default_h = max(640, min(int(screen_h * 0.85), 860))
+        match = re.match(r"^(\d+)x(\d+)(?:([+-]\d+)([+-]\d+))?$", str(self.ui.get("geometry") or ""))
+        if not match:
+            self.geometry(f"{default_w}x{default_h}"
+                          f"+{(screen_w - default_w) // 2}"
+                          f"+{max((screen_h - default_h) // 2, 0)}")
+            return
+        width = max(960, int(match.group(1)))
+        height = max(540, int(match.group(2)))
+        pos_x = int(match.group(3)) if match.group(3) else (screen_w - width) // 2
+        pos_y = int(match.group(4)) if match.group(4) else max((screen_h - height) // 2, 0)
+        # A saved spot on a monitor that no longer exists: center instead.
+        if not (0 <= pos_x <= screen_w - 200 and 0 <= pos_y <= screen_h - 120):
+            pos_x, pos_y = (screen_w - width) // 2, max((screen_h - height) // 2, 0)
+        self.geometry(f"{width}x{height}+{pos_x}+{pos_y}")
+
+    def _on_resize(self, event=None):
+        if event is not None and event.widget is not self:
+            return
+        if self.state() != "normal":
+            return
+        if self._geom_after_id:
+            self.after_cancel(self._geom_after_id)
+        self._geom_after_id = self.after(500, self._save_geometry)
+
+    def _save_geometry(self):
+        self._geom_after_id = None
+        try:
+            if self.state() != "normal":
+                return
+            self.ui["geometry"] = self.geometry()
+            save_ui_state(self.ui)
+        except Exception:
+            pass
+
+    def _on_close(self):
+        self._save_geometry()
+        self.destroy()
 
     # ---------- theming ----------
 
@@ -240,26 +290,30 @@ class App(tk.Tk):
         p = self.palette
         bar = tk.Frame(self, bg=p["bg"])
         bar.pack(fill="x", padx=14, pady=(14, 4))
+        # Row 0: title + buttons. The title is the only stretchable column, so a
+        # narrow window clips the title instead of pushing buttons off the bar.
+        # Row 1: the status line gets the full width.
+        bar.columnconfigure(0, weight=1)
 
         tk.Label(bar, text=APP_NAME, bg=p["bg"], fg=p["fg"],
-                 font=("Segoe UI Semibold", SZ_TITLE)).pack(side="left")
-        self.info = tk.Label(bar, text="", bg=p["bg"], fg=p["dim"], font=(FONT, SZ_INFO))
-        self.info.pack(side="left", padx=(16, 0))
-
-        ttk.Button(bar, text="Settings", command=self.open_settings).pack(side="right", padx=(8, 0))
-
+                 font=("Segoe UI Semibold", SZ_TITLE)).grid(row=0, column=0, sticky="w")
+        ttk.Button(bar, text="Refresh", command=self.refresh).grid(
+            row=0, column=1, padx=(0, 6), sticky="e")
+        self.set_main_btn = ttk.Button(bar, text="Set main model", command=self.set_main_model)
+        self.set_main_btn.state(["disabled"])
+        self.set_main_btn.grid(row=0, column=2, padx=(0, 6), sticky="e")
         combo = ttk.Combobox(
             bar, textvariable=self.combo_var, values=self.skins,
             state="readonly", width=24,
         )
         combo.bind("<<ComboboxSelected>>", self._on_skin_select)
-        combo.pack(side="right", padx=(8, 0))
+        combo.grid(row=0, column=3, padx=(0, 6), sticky="e")
+        ttk.Button(bar, text="Settings", command=self.open_settings).grid(
+            row=0, column=4, sticky="e")
 
-        self.set_main_btn = ttk.Button(bar, text="Set main model", command=self.set_main_model)
-        self.set_main_btn.state(["disabled"])
-        self.set_main_btn.pack(side="right", padx=8)
-        ttk.Button(bar, text="Copy model name", command=self.copy_selected).pack(side="right", padx=6)
-        ttk.Button(bar, text="Refresh", command=self.refresh).pack(side="right")
+        self.info = tk.Label(bar, text="", bg=p["bg"], fg=p["dim"],
+                             font=(FONT, SZ_INFO), anchor="w")
+        self.info.grid(row=1, column=0, columnspan=5, sticky="w", pady=(2, 0))
 
     def _build_notebook(self):
         self.nb = ttk.Notebook(self)
@@ -268,7 +322,7 @@ class App(tk.Tk):
         tab_cfg = tk.Frame(self.nb, bg=self._c("bg"))
         tab_stealth = tk.Frame(self.nb, bg=self._c("bg"))
         self.nb.add(tab_free, text="Free models")
-        self.nb.add(tab_cfg, text="In Hermes")
+        self.nb.add(tab_cfg, text="Hermes config")
         self.nb.add(tab_stealth, text="Stealth")
         self._build_catalog_tab(tab_free)
         self._build_config_tab(tab_cfg)
@@ -305,6 +359,7 @@ class App(tk.Tk):
             self.tree.column(col, width=WIDTHS[col], anchor="w")
         self.tree.pack(side="left", fill="both", expand=True)
         self.tree.bind("<Double-1>", lambda _e: self.copy_selected())
+        self.tree.bind("<Button-3>", self._on_free_rclick)
 
         self.tree_vscroll = ttk.Scrollbar(wrap, orient="vertical", command=self.tree.yview)
         self.tree_vscroll.pack(side="right", fill="y")
@@ -337,10 +392,16 @@ class App(tk.Tk):
             self.tree2.column(col, width=CFG_WIDTHS[col], anchor="w")
         self.tree2.pack(side="left", fill="both", expand=True)
         self.tree2.bind("<Double-1>", lambda _e: self.copy_row(self.tree2))
+        self.tree2.bind("<Button-1>", self._on_cfg_press)
+        self.tree2.bind("<B1-Motion>", self._on_cfg_motion)
+        self.tree2.bind("<ButtonRelease-1>", self._on_cfg_release)
+        self.tree2.bind("<Motion>", self._on_cfg_hover)
+        self.tree2.bind("<Button-3>", self._on_cfg_rclick)
 
         self.tree2.tag_configure("free", foreground=p["ok"])
         self.tree2.tag_configure("paid", foreground=p["warn"])
         self.tree2.tag_configure("missing", foreground=p["error"])
+        self.tree2.tag_configure("dragging", background=p["accent"], foreground=p["fg"])
 
         self.tree2_vscroll = ttk.Scrollbar(inner, orient="vertical", command=self.tree2.yview)
         self.tree2_vscroll.pack(side="right", fill="y")
@@ -640,6 +701,7 @@ class App(tk.Tk):
             meta_out = None
             cfg_rows = []
             usage = None
+            fb_entries = []
             if models:
                 try:
                     models_out, meta_out = nous_core.fetch_free_models()
@@ -652,7 +714,11 @@ class App(tk.Tk):
                     usage = hermes_state.recent_usage()
                 except Exception:
                     cfg_rows, usage = [], {"counts": {}, "fallbacks": [], "last": None}
-            self.after(0, lambda: self._show(models_out, meta_out, cfg_rows, usage))
+                try:
+                    fb_entries = hermes_state.fallback_chain()
+                except Exception:
+                    fb_entries = []
+            self.after(0, lambda: self._show(models_out, meta_out, cfg_rows, usage, fb_entries))
 
         threading.Thread(target=work, daemon=True).start()
 
@@ -704,6 +770,19 @@ class App(tk.Tk):
                 tags=(status,),
             )
 
+        # Fallback rows only: remember which tree row is which fallback_providers slot
+        # so they can be dragged into a new order and removed by right-click.
+        self._fb_rows = []
+        self._fb_chain = {}
+        for item in self.tree2.get_children():
+            role = str(self.tree2.item(item)["values"][0])
+            if role.startswith("fallback #"):
+                try:
+                    self._fb_chain[item] = int(role.split("#", 1)[1]) - 1
+                except ValueError:
+                    continue
+                self._fb_rows.append(item)
+
         counts = usage.get("counts", {})
         top = ", ".join(f"{k} ×{v}" for k, v in sorted(counts.items(), key=lambda kv: -kv[1])[:4])
         text = f"Recent API calls: {top or 'none'}"
@@ -725,8 +804,10 @@ class App(tk.Tk):
             )
         self._autofit_columns(self.tree2, self.tree2_hscroll, self.tree2_vscroll)
 
-    def _show(self, models, meta, cfg_rows, usage):
+    def _show(self, models, meta, cfg_rows, usage, fb_entries=None):
         self._busy = False
+        if fb_entries is not None:
+            self.fallback_entries = fb_entries
         stamp = datetime.datetime.now().strftime("%H:%M")
         if models is not None:
             self.models = models
@@ -852,10 +933,7 @@ class App(tk.Tk):
         ):
             return
         try:
-            proc = subprocess.run(
-                ["hermes", "config", "set", "model.default", slug],
-                capture_output=True, text=True, timeout=30,
-            )
+            proc = hermes_state.run_hermes(["config", "set", "model.default", slug], timeout=30)
         except Exception as exc:  # noqa: BLE001
             messagebox.showerror("Set main model failed", str(exc))
             self._flash_status("Set main model failed")
@@ -885,6 +963,230 @@ class App(tk.Tk):
         self.clipboard_append(vals[1])
         self.update()
         self._flash_status("Copied: " + vals[1])
+
+    # ---------- fallback chain editing ----------
+
+    def _on_free_rclick(self, event):
+        """Right-click selects the row under the pointer, then opens the context menu."""
+        row = self.tree.identify_row(event.y)
+        if not row:
+            return
+        self.tree.selection_set(row)
+        self.tree.focus_set()
+        self.selected_slug = self.tree.item(row)["values"][0]
+        self._popup_free_menu(event)
+
+    def _menu(self, parent=None):
+        return tk.Menu(
+            parent or self, tearoff=0,
+            bg=self._c("card"), fg=self._c("fg"),
+            activebackground=self._c("accent"), activeforeground=self._c("fg"),
+            relief="flat", borderwidth=0, font=(FONT, SZ_INFO),
+        )
+
+    def _popup_free_menu(self, event):
+        slug = self.selected_slug
+        menu = self._menu()
+
+        add = self._menu(menu)
+        add.add_command(label="at the end", command=lambda: self._add_fallback(slug, None))
+        add.add_command(label="at the top (new #1)", command=lambda: self._add_fallback(slug, 0))
+        menu.add_cascade(label="Add as new fallback", menu=add)
+
+        chain = self.fallback_entries
+        replace = self._menu(menu)
+        if chain:
+            for index, entry in enumerate(chain):
+                label = f"{index + 1} · {entry.get('model', '?')}  (via {entry.get('provider', '?')})"
+                replace.add_command(
+                    label=label, command=lambda i=index: self._replace_fallback(slug, i)
+                )
+        else:
+            replace.add_command(label="no fallbacks configured", state="disabled")
+        menu.add_cascade(label="Replace fallback", menu=replace)
+
+        menu.add_separator()
+        menu.add_command(label="Copy model name", command=self.copy_selected)
+        menu.tk_popup(event.x_root, event.y_root)
+        menu.grab_release()
+
+    def _provider_for(self, slug):
+        """Provider for a new fallback entry; OpenRouter rows will supply their own."""
+        return "nous"
+
+    def _add_fallback(self, slug, index):
+        if self._fallback_busy:
+            return
+        try:
+            chain = hermes_state.fallback_chain()
+        except Exception as exc:  # noqa: BLE001
+            self._fallback_failed(exc)
+            return
+        pos = len(chain) if index is None else max(0, min(index, len(chain)))
+        chain.insert(pos, {"provider": self._provider_for(slug), "model": slug})
+        self._write_fallbacks(chain, f"Added {slug} as fallback #{pos + 1}")
+
+    def _replace_fallback(self, slug, index):
+        if self._fallback_busy:
+            return
+        try:
+            chain = hermes_state.fallback_chain()
+        except Exception as exc:  # noqa: BLE001
+            self._fallback_failed(exc)
+            return
+        if not 0 <= index < len(chain):
+            self._flash_status("That fallback slot is gone — hit Refresh")
+            return
+        old = chain[index].get("model", "?")
+        entry = dict(chain[index])
+        entry["model"] = slug
+        chain[index] = entry
+        self._write_fallbacks(chain, f"Replaced fallback #{index + 1}: {old} → {slug}")
+
+    def _write_fallbacks(self, chain, note):
+        self._fallback_busy = True
+        self._flash_status("Writing fallback chain…")
+
+        def work():
+            try:
+                hermes_state.set_fallbacks(chain)
+            except Exception as exc:  # noqa: BLE001
+                self.after(0, lambda: self._fallback_failed(exc))
+                return
+            self.after(0, lambda: self._fallback_written(note))
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def _fallback_written(self, note):
+        self._fallback_busy = False
+        self._flash_status(note)
+        self._record_history("info", note)
+        self._notify("Fallback chain", note, "ok")
+        self.refresh_deep()
+
+    def _fallback_failed(self, error):
+        self._fallback_busy = False
+        messagebox.showerror("Fallback update failed", str(error))
+        self._flash_status("Fallback update failed")
+
+    # ---------- config tab: drag to reorder, right-click to remove ----------
+
+    def _on_cfg_hover(self, event):
+        if self._drag_fb is not None:
+            return
+        item = self.tree2.identify_row(event.y)
+        self.tree2.configure(cursor="fleur" if item in self._fb_chain else "")
+
+    def _on_cfg_press(self, event):
+        self._drag_fb = None
+        if self._fallback_busy:
+            return
+        item = self.tree2.identify_row(event.y)
+        if item is None or item not in self._fb_chain:
+            return  # main and aux rows are not draggable
+        self._drag_fb = {
+            "item": item,
+            "start_y": event.y,
+            "active": False,
+            "tags": tuple(self.tree2.item(item, "tags") or ()),
+        }
+
+    def _on_cfg_motion(self, event):
+        drag = self._drag_fb
+        if drag is None:
+            return
+        if not drag["active"]:
+            if abs(event.y - drag["start_y"]) < 5:
+                return
+            drag["active"] = True
+            self.tree2.configure(cursor="fleur")
+            self.tree2.item(drag["item"], tags=("dragging",))
+        target = self.tree2.identify_row(event.y)
+        if target is None or target not in self._fb_chain or target == drag["item"]:
+            return
+        box = self.tree2.bbox(target)
+        before = bool(box) and event.y < box[1] + box[3] / 2
+        rel_target = self._fb_rows.index(target)
+        rel_self = self._fb_rows.index(drag["item"])
+        insert_at = rel_target if before else rel_target + 1
+        if rel_self < insert_at:
+            insert_at -= 1
+        insert_at = max(0, min(insert_at, len(self._fb_rows) - 1))
+        if insert_at == rel_self:
+            return
+        base = self.tree2.index(self._fb_rows[0])
+        try:
+            self.tree2.move(drag["item"], "", base + insert_at)
+        except tk.TclError:
+            self._cancel_drag()
+            return
+        self._fb_rows.insert(insert_at, self._fb_rows.pop(rel_self))
+
+    def _on_cfg_release(self, event=None):
+        drag = self._drag_fb
+        self._drag_fb = None
+        self.tree2.configure(cursor="")
+        if drag is None:
+            return
+        try:
+            self.tree2.item(drag["item"], tags=drag["tags"])
+        except tk.TclError:
+            pass
+        if not drag["active"]:
+            return
+        order = [self._fb_chain[item] for item in self._fb_rows]
+        if order == sorted(order):
+            return
+        try:
+            chain = hermes_state.fallback_chain()
+        except Exception as exc:  # noqa: BLE001
+            self._fallback_failed(exc)
+            return
+        new_chain = [chain[i] for i in order]
+        self._write_fallbacks(new_chain, "Reordered fallbacks")
+
+    def _cancel_drag(self):
+        drag = self._drag_fb
+        self._drag_fb = None
+        self.tree2.configure(cursor="")
+        if drag is None:
+            return
+        try:
+            self.tree2.item(drag["item"], tags=drag["tags"])
+        except tk.TclError:
+            pass
+
+    def _on_cfg_rclick(self, event):
+        item = self.tree2.identify_row(event.y)
+        if item is None or item not in self._fb_chain:
+            return  # main and aux rows get no menu
+        index = self._fb_chain[item]
+        self.tree2.selection_set(item)
+        self.tree2.focus_set()
+        self.selected_slug = self.tree2.item(item)["values"][1]
+        menu = self._menu()
+        menu.add_command(
+            label=f"Remove fallback #{index + 1}",
+            command=lambda: self._remove_fallback(index),
+        )
+        menu.add_separator()
+        menu.add_command(label="Copy model name", command=lambda: self.copy_row(self.tree2))
+        menu.tk_popup(event.x_root, event.y_root)
+        menu.grab_release()
+
+    def _remove_fallback(self, index):
+        if self._fallback_busy:
+            return
+        try:
+            chain = hermes_state.fallback_chain()
+        except Exception as exc:  # noqa: BLE001
+            self._fallback_failed(exc)
+            return
+        if not 0 <= index < len(chain):
+            self._flash_status("That fallback slot is gone — hit Refresh")
+            return
+        removed = chain.pop(index)
+        self._write_fallbacks(chain, f"Removed fallback #{index + 1}: {removed.get('model', '?')}")
 
     # ---------- stealth ----------
 
