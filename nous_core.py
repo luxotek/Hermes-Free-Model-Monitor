@@ -245,12 +245,20 @@ def fetch_free_models():
         else:
             for model in payload.get("data", []):
                 rid = model.get("id") or model.get("model") or ""
-                if not rid.endswith(":free"):
+                pricing = model.get("pricing") or {}
+                # Free on OpenRouter: the :free marker, or $0 input, or $0 output.
+                if not (rid.endswith(":free")
+                        or _price_is_free(pricing.get("prompt"))
+                        or _price_is_free(pricing.get("completion"))):
                     continue
-                row = _catalog_row(model, "openrouter")
-                if row:
-                    add(row, "openrouter")
-                    or_count += 1
+                # Build the row directly (no _catalog_row AND-gate) so an $0-completed
+                # model like scaledown/extract is included even if input is not $0.
+                row = dict(_catalog_info(model))
+                row["name"] = model.get("id")
+                row["compaction"] = False
+                row["source"] = "openrouter"
+                add(row, "openrouter")
+                or_count += 1
 
     results = []
     for name, rec in sorted(by_name.items()):

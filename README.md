@@ -104,6 +104,25 @@ The app reads your existing Hermes login from
 `%LOCALAPPDATA%\hermes\auth.json` (`providers.nous.access_token`). If it reports
 an auth error, re-login to the Portal through Hermes (`hermes setup`) and try again.
 
+## OpenRouter free models
+
+When a valid OpenRouter token is present (from the Hermes `.env`, or `auth.json`'s
+credential pool), the **Free models** tab also pulls OpenRouter's
+`GET /api/v1/models` catalog. A model is listed as free when it carries the
+`:free` suffix, or charges `$0` for input, or `$0` for output:
+
+- OR's official free marker is the `:free` suffix (7 models today);
+- `scaledown/extract` and `scaledown/summarize` are `$0` to *complete* (input
+  costs a few hundred-thousandths of a cent), so they're included too;
+- the count grows and shrinks as OpenRouter onboard new providers — it is a live
+  number, not a fixed list.
+
+> **Why isn't it 25?** OpenRouter's *website* (openrouter.ai/collections/free-models)
+> shows its own usage-ranked free collection; that curated view includes
+> effectively-free models with tiny-but-nonzero endpoint prices and models the
+> authenticated API payload doesn't return. HFMM lists the *live API* count, so
+> it reflects what OpenRouter publishes right now.
+
 ## Files
 
 | File | Purpose |
