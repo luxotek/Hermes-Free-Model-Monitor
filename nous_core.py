@@ -55,7 +55,7 @@ def _price_is_free(value):
         return False
 
 
-def _catalog_row(model):
+def _catalog_row(model, source="catalog"):
     pricing = model.get("pricing") or {}
     if not (_price_is_free(pricing.get("prompt")) and _price_is_free(pricing.get("completion"))):
         return None
@@ -68,8 +68,84 @@ def _catalog_row(model):
         "vision": "image" in modalities,
         "video": "video" in modalities,
         "compaction": False,
-        "source": "catalog",
+        "source": source,
     }
+
+
+_OPENROUTER_KEY_URL = "https://openrouter.ai/api/v1/key"
+_OPENROUTER_MODELS_URL = "https://openrouter.ai/api/v1/models"
+_OPENROUTER_HEADERS = {"User-Agent": "hfmm/1.0"}
+
+_openrouter_cache = {}
+
+
+def _env_openrouter_key():
+    """OpenRouter token lives in Hermes's .env, the same file the CLI loads."""
+    home = hermes_home()
+    if not home:
+        return None
+    try:
+        with open(os.path.join(home, ".env"), encoding="utf-8", errors="replace") as fh:
+            for line in fh:
+                line = line.strip()
+                if line.startswith("OPENROUTER_API_KEY="):
+                    return line.split("=", 1)[1].strip().strip('"').strip("'")
+    except OSError:
+        pass
+    return None
+
+
+def _pool_openrouter_key():
+    """Also accept a pooled credential from auth.json if no .env is present."""
+    home = hermes_home()
+    if not home:
+        return None
+    try:
+        with open(os.path.join(home, "auth.json"), encoding="utf-8") as fh:
+            data = json.load(fh)
+    except (OSError, ValueError):
+        return None
+    pool = (data.get("credential_pool") or {}).get("openrouter")
+    if not isinstance(pool, list):
+        return None
+    for entry in pool:
+        if isinstance(entry, dict):
+            for field in ("api_key", "access_token", "key"):
+                if entry.get(field):
+                    return entry[field]
+    return None
+
+
+def _openrouter_key_accepts(key):
+    req = urllib.request.Request(
+        _OPENROUTER_KEY_URL,
+        headers={"Authorization": f"Bearer {key}", **_OPENROUTER_HEADERS},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            return resp.status == 200
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def openrouter_key():
+    """Return a valid OpenRouter token, checked once per process, or None."""
+    cached = _openrouter_cache.get("key")
+    if cached is not None:
+        return cached
+    for candidate in (_env_openrouter_key, _pool_openrouter_key):
+        key = candidate()
+        if key and _openrouter_key_accepts(key):
+            _openrouter_cache["key"] = key
+            return key
+    _openrouter_cache["key"] = None
+    return None
+
+
+def _get_json_http(url, headers):
+    req = urllib.request.Request(url, headers=headers)
+    with urllib.request.urlopen(req, timeout=30) as resp:
+        return json.loads(resp.read().decode("utf-8", "replace"), strict=False)
 
 
 def fetch_free_models():
@@ -142,6 +218,26 @@ def fetch_free_models():
         if slug not in by_name:
             add(row, "catalog")
 
+    or_key = openrouter_key()
+    or_count = 0
+    if or_key:
+        try:
+            payload = _get_json_http(
+                _OPENROUTER_MODELS_URL,
+                {"Authorization": f"Bearer {or_key}", **_OPENROUTER_HEADERS},
+            )
+        except Exception:  # noqa: BLE001
+            pass
+        else:
+            for model in payload.get("data", []):
+                rid = model.get("id") or model.get("model") or ""
+                if not rid.endswith(":free"):
+                    continue
+                row = _catalog_row(model, "openrouter")
+                if row:
+                    add(row, "openrouter")
+                    or_count += 1
+
     results = []
     for name, rec in sorted(by_name.items()):
         sources = rec.pop("sources")
@@ -154,4 +250,5 @@ def fetch_free_models():
         "catalog_rows": len(catalog),
         "free_count": len(results),
         "catalog_ids": [m.get("id") for m in catalog if m.get("id")],
+        "openrouter": or_count,
     }
