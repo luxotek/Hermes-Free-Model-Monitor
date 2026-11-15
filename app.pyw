@@ -27,10 +27,16 @@ SZ_HEAD = 13
 
 COLS = ("Model", "Context", "Inputs", "Price", "Flags", "Source")
 WIDTHS = {"Model": 360, "Context": 110, "Inputs": 160, "Price": 100, "Flags": 210, "Source": 120}
-CFG_COLS = ("Role", "Model", "Provider", "Status", "Notes")
-CFG_WIDTHS = {"Role": 190, "Model": 340, "Provider": 90, "Status": 100, "Notes": 260}
-STEALTH_COLS = ("Model", "Mentions", "Last seen", "Origin", "State", "Detail")
-STEALTH_WIDTHS = {"Model": 260, "Mentions": 90, "Last seen": 170, "Origin": 120, "State": 120, "Detail": 260}
+CFG_COLS = ("Role", "Model", "Provider", "Context", "Flags", "Status", "Notes")
+CFG_WIDTHS = {
+    "Role": 190, "Model": 340, "Provider": 90, "Context": 110,
+    "Flags": 200, "Status": 100, "Notes": 240,
+}
+STEALTH_COLS = ("Model", "Context", "Flags", "Mentions", "Last seen", "Origin", "State", "Detail")
+STEALTH_WIDTHS = {
+    "Model": 260, "Context": 110, "Flags": 200, "Mentions": 90,
+    "Last seen": 170, "Origin": 120, "State": 120, "Detail": 260,
+}
 
 SZ_INFO = 14
 
@@ -81,6 +87,7 @@ class App(tk.Tk):
         self.palette = dict(theme.FALLBACK_PALETTE)
         self.meta = {}
         self.catalog_meta = {}
+        self.catalog_lookup = {}
         self.choice = theme.load_choice()
         self.skins = ["Auto (follow Hermes)"] + theme.skin_names()
         self.selected_slug = None
@@ -730,6 +737,22 @@ class App(tk.Tk):
             return "paid", "listed, not free"
         return "missing", "not in catalog (dead?)"
 
+    def _model_info(self, slug):
+        """Context/flags for a configured model: catalog entry, else free row."""
+        info = self.catalog_lookup.get(slug)
+        if info is None and slug.endswith(":free"):
+            info = self.catalog_lookup.get(slug[: -len(":free")])
+        if info is None:
+            for model in self.models:
+                if model["name"] == slug:
+                    return model
+        return info or {}
+
+    @staticmethod
+    def _flags_text(info):
+        flags = [name for name in ("vision", "video", "compaction") if info.get(name)]
+        return ", ".join(flags) or "-"
+
     def _insert(self, model):
         flags = []
         if model["vision"]:
@@ -761,10 +784,14 @@ class App(tk.Tk):
         catalog_ids = set(self.catalog_meta.get("catalog_ids", []))
         for row in rows:
             status, detail = self._classify(row["model"], free_names, catalog_ids)
+            info = self._model_info(row["model"])
+            context = info.get("context")
             self.tree2.insert(
                 "", "end",
                 values=(
                     row["role"], row["model"], row["provider"],
+                    f"{context:,}" if context else "?",
+                    self._flags_text(info),
                     status.upper(), detail,
                 ),
                 tags=(status,),
@@ -813,6 +840,9 @@ class App(tk.Tk):
             self.models = models
             self.meta = meta
             self.catalog_meta = meta
+            self.catalog_lookup = (meta or {}).get("catalog_lookup", {})
+            if hasattr(self, "tree3"):
+                self._render_stealth()  # context/flags columns may have just arrived
             if hasattr(self, "tree"):
                 self.tree.delete(*self.tree.get_children())
                 for model in models:
@@ -887,18 +917,20 @@ class App(tk.Tk):
                      f"   ·   Flags {values[4]}   ·   Source {values[5]}")
         elif tree is self.tree2:
             self.selected_slug = values[1]
-            status = values[3].lower()
+            status = values[5].lower()
             color = {"free": self._c("ok"), "paid": self._c("warn"), "missing": self._c("error")}.get(status)
             title = f"{values[0]}  →  {values[1]}"
-            chips = f"Provider {values[2]}   ·   Status {values[3]}   ·   {values[4]}"
+            chips = (f"Provider {values[2]}   ·   Context {values[3]}   ·   Flags {values[4]}"
+                     f"   ·   Status {values[5]}   ·   {values[6]}")
         elif tree is self.tree3:
             self.selected_slug = values[0]
-            state = values[4].lower()
+            state = values[6].lower()
             color = {"alive": self._c("ok"), "missing": self._c("error"),
                      "rate_limited": self._c("warn")}.get(state)
             title = values[0]
-            chips = (f"Mentions {values[1]}   ·   Last seen {values[2]}   ·   Origin {values[3]}"
-                     f"   ·   State {values[4]}   ·   {values[5]}")
+            chips = (f"Context {values[1]}   ·   Flags {values[2]}   ·   Mentions {values[3]}"
+                     f"   ·   Last seen {values[4]}   ·   Origin {values[5]}"
+                     f"   ·   State {values[6]}   ·   {values[7]}")
 
         if hasattr(self, "detail_title"):
             self.detail_title.configure(
@@ -1214,10 +1246,15 @@ class App(tk.Tk):
             return
         self.tree3.delete(*self.tree3.get_children())
         for row in self.stealth_rows:
+            info = self._model_info(row["slug"])
+            context = info.get("context")
             self.tree3.insert(
                 "", "end",
                 values=(
-                    row["slug"], row["calls"], row["last_seen"], row["origin"],
+                    row["slug"],
+                    f"{context:,}" if context else "?",
+                    self._flags_text(info),
+                    row["calls"], row["last_seen"], row["origin"],
                     row["state"].upper(), row["detail"] or "-",
                 ),
                 tags=(row["state"],),

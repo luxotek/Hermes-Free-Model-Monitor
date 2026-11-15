@@ -22,12 +22,16 @@ Double-click **`run.ps1`** (right-click > Run with PowerShell) or **`run.cmd`**.
 - **Tabs** (default): *Free models* = the live catalog (context, inputs, price,
   flags, source); *Hermes config* = everything Hermes has pinned (`model.default`,
   auxiliary task models, fallback chain) classified as `FREE` / `PAID` /
-  `MISSING`, plus recent per-model API call counts from `logs/agent.log`.
+  `MISSING`, with context and flags (vision / video / compaction) filled in from
+  the catalog where known, plus recent per-model API call counts from
+  `logs/agent.log`.
 - **Stealth**: off-catalog models mined from `logs/agent.log` (`stealth/*` slugs),
-  with mention counts and last-seen timestamps. Buttons: *Probe selected* /
-  *Probe all* send a one-token chat request to test whether each model still
-  answers (`alive` / `missing` / `rate_limited`), *Rescan log* re-mines the log,
-  and *Auto probe (5 min)* keeps probing in the background. When a probe hits a
+  with mention counts and last-seen timestamps; the context and flags columns
+  fill in when the model is known to the catalog, otherwise `-`. Buttons:
+  *Probe selected* / *Probe all* send a one-token chat request to test whether
+  each model still answers (`alive` / `missing` / `rate_limited`), *Rescan log*
+  re-mines the log, and *Auto probe (5 min)* keeps probing in the background.
+  When a probe hits a
   429, any `alternates` listed in the error are added to the watchlist as new
   rows (origin `429 alternates`). Watches and probe results persist in
   `stealth_state.json` (gitignored).

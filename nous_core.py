@@ -55,21 +55,27 @@ def _price_is_free(value):
         return False
 
 
-def _catalog_row(model, source="catalog"):
-    pricing = model.get("pricing") or {}
-    if not (_price_is_free(pricing.get("prompt")) and _price_is_free(pricing.get("completion"))):
-        return None
+def _catalog_info(model):
+    """Context / modality facts for any catalog entry, free or paid."""
     arch = model.get("architecture") or {}
     modalities = arch.get("input_modalities") or ["text"]
     return {
-        "name": model.get("id"),
         "context": model.get("context_length") or model.get("contextLength"),
         "inputs": ", ".join(modalities),
         "vision": "image" in modalities,
         "video": "video" in modalities,
-        "compaction": False,
-        "source": source,
     }
+
+
+def _catalog_row(model, source="catalog"):
+    pricing = model.get("pricing") or {}
+    if not (_price_is_free(pricing.get("prompt")) and _price_is_free(pricing.get("completion"))):
+        return None
+    row = _catalog_info(model)
+    row["name"] = model.get("id")
+    row["compaction"] = False
+    row["source"] = source
+    return row
 
 
 _OPENROUTER_KEY_URL = "https://openrouter.ai/api/v1/key"
@@ -160,6 +166,14 @@ def fetch_free_models():
         if row:
             by_id[row["name"]] = row
 
+    # Context/flags for every catalog entry (paid ones too), so the config tab
+    # can show them for models that are not on the free list.
+    lookup = {}
+    for model in catalog:
+        rid = model.get("id")
+        if rid:
+            lookup[rid] = _catalog_info(model)
+
     by_name = {}
 
     def add(record, source):
@@ -246,9 +260,21 @@ def fetch_free_models():
         else:
             rec["source"] = next(iter(sources))
         results.append(rec)
+
+    # Free rows carry portal-derived context/flags for models the catalog does
+    # not describe; fold them into the lookup as well.
+    for rec in results:
+        info = lookup.setdefault(rec["name"], {})
+        info.setdefault("context", rec.get("context"))
+        info.setdefault("inputs", rec.get("inputs"))
+        info.setdefault("vision", rec.get("vision", False))
+        info.setdefault("video", rec.get("video", False))
+        info.setdefault("compaction", rec.get("compaction", False))
+
     return results, {
         "catalog_rows": len(catalog),
         "free_count": len(results),
         "catalog_ids": [m.get("id") for m in catalog if m.get("id")],
         "openrouter": or_count,
+        "catalog_lookup": lookup,
     }
