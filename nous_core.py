@@ -68,6 +68,27 @@ def _temp_type(slug):
     return ""
 
 
+INPUT_ORDER = ("text", "image", "video", "audio")
+
+
+def _normalize_inputs(modalities):
+    """Canonical modality order: text first (it is always there), then the rest."""
+    items = {str(m).strip() for m in (modalities or []) if str(m).strip()}
+    return sorted(items, key=lambda m: (
+        INPUT_ORDER.index(m) if m in INPUT_ORDER else len(INPUT_ORDER), m))
+
+
+def _merge_inputs(*values):
+    """Union of comma-separated modality strings, in canonical order."""
+    joined = []
+    for value in values:
+        for item in str(value or "").split(","):
+            item = item.strip()
+            if item and item not in joined:
+                joined.append(item)
+    return ", ".join(_normalize_inputs(joined))
+
+
 def _catalog_info(model):
     """Context / modality facts for any catalog entry, free or paid."""
     arch = model.get("architecture") or {}
@@ -75,7 +96,7 @@ def _catalog_info(model):
     slug = model.get("id") or model.get("model") or ""
     return {
         "context": model.get("context_length") or model.get("contextLength"),
-        "inputs": ", ".join(modalities),
+        "inputs": ", ".join(_normalize_inputs(modalities)),
         "vision": "image" in modalities,
         "video": "video" in modalities,
         "temp": _temp_type(slug),
@@ -213,7 +234,7 @@ def fetch_free_models(permanent_only=True):
         if not existing["context"]:
             existing["context"] = record["context"]
         if record["inputs"] != "text":
-            existing["inputs"] = record["inputs"]
+            existing["inputs"] = _merge_inputs(existing["inputs"], record["inputs"])
         if not existing["temp"]:
             existing["temp"] = record["temp"]
         if not existing["end"]:
