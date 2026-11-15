@@ -3,10 +3,14 @@
 Checks Hermes's 400+ model list to find which free models are live right now,
 so you can set a reliable main model and fallback chain. A tiny desktop window
 (shortened **HFMM**, the "Hermes FMM companion app") that unions two live
-sources — including stealth free SKUs that only exist in the inference catalog:
+sources and keeps only the models worth building a long-term chain on:
 
 1. `GET portal.nousresearch.com/api/nous/recommended-models` (what the free tier may pick)
 2. `GET inference-api.nousresearch.com/v1/models` (any row where prompt + completion price is 0)
+3. `GET openrouter.ai/api/v1/models` (the `:free` models your key can actually call)
+
+Previews and anything with an expiration date are dropped from the free list; the
+config tab still flags them if you already have one pinned.
 
 No install, no dependencies beyond Python 3 with tkinter (stdlib only).
 A self-contained Windows `.exe` is attached to the GitHub release for machines
@@ -20,21 +24,13 @@ Double-click **`run.ps1`** (right-click > Run with PowerShell) or **`run.cmd`**.
 ## Views
 
 - **Tabs** (default): *Free models* = the live catalog (context, inputs, price,
-  flags, source); *Hermes config* = everything Hermes has pinned (`model.default`,
-  auxiliary task models, fallback chain) classified as `FREE` / `PAID` /
-  `MISSING`, with context and flags (vision / video / compaction) filled in from
-  the catalog where known, plus recent per-model API call counts from
-  `logs/agent.log`.
-- **Stealth**: off-catalog models mined from `logs/agent.log` (`stealth/*` slugs),
-  with mention counts and last-seen timestamps; the context and flags columns
-  fill in when the model is known to the catalog, otherwise `-`. Buttons:
-  *Probe selected* / *Probe all* send a one-token chat request to test whether
-  each model still answers (`alive` / `missing` / `rate_limited`), *Rescan log*
-  re-mines the log, and *Auto probe (5 min)* keeps probing in the background.
-  When a probe hits a
-  429, any `alternates` listed in the error are added to the watchlist as new
-  rows (origin `429 alternates`). Watches and probe results persist in
-  `stealth_state.json` (gitignored).
+  flags, source), permanent free models only — previews and anything with an
+  expiration date are left off so the list stays safe to build a chain on;
+  *Hermes config* = everything Hermes has pinned (`model.default`, auxiliary
+  task models, fallback chain) classified as `FREE` / `PAID` / `MISSING`, with
+  context and flags (vision / video / compaction) filled in from the catalog
+  where known, a **Temp** column flagging previews and expiry dates, plus recent
+  per-model API call counts from `logs/agent.log`.
 - **Detail panel**: click any row (any tab) to see its full info stacked under
   the list — no more squinting at truncated columns.
 - **Bubbles**: self-contained toast cards in the window's bottom-right corner
@@ -68,7 +64,7 @@ Double-click **`run.ps1`** (right-click > Run with PowerShell) or **`run.cmd`**.
   current without touching your Hermes config or logs.
 - **Deep check (4 h)**: only the Hermes config + usage counts.
 - The bottom status line shows it plainly: `N free models of M total · catalog
-  updated HH:MM · Hermes config checked HH:MM · stealth watch: N`.
+  updated HH:MM · Hermes config checked HH:MM`.
 
 ## Themes
 
@@ -132,7 +128,6 @@ credential pool), the **Free models** tab also pulls OpenRouter's
 | `hermes_state.py` | Reads Hermes config via `hermes config get`; parses `agent.log` usage |
 | `theme.py` | Skin engine + desktop preset palettes, override persistence |
 | `alerts.py` | Per-role transition detection + taskbar flash helper |
-| `stealth.py` | Log mining, liveness probes, 429-alternate discovery |
 | `bubbles.py` | Bottom-right bubble notification stack |
 | `run.ps1` / `run.cmd` | Launchers that find a Python automatically |
 | `LICENSE` / `NOTICE.md` | Source-available non-commercial license + AI-assistance notice |

@@ -1,6 +1,7 @@
 """Fetch the live free-model catalog from the Nous Portal + inference API."""
 import json
 import os
+import re
 import urllib.request
 
 DEFAULT_PORTAL = "https://portal.nousresearch.com"
@@ -55,15 +56,30 @@ def _price_is_free(value):
         return False
 
 
+TEMP_TOKENS = ("preview", "alpha", "beta", "exp")
+
+
+def _temp_type(slug):
+    """Lifecycle marker from a slug: preview / alpha / beta / exp (whole tokens)."""
+    tokens = re.split(r"[/:._-]", str(slug or "").lower())
+    for token in TEMP_TOKENS:
+        if token in tokens:
+            return token
+    return ""
+
+
 def _catalog_info(model):
     """Context / modality facts for any catalog entry, free or paid."""
     arch = model.get("architecture") or {}
     modalities = arch.get("input_modalities") or ["text"]
+    slug = model.get("id") or model.get("model") or ""
     return {
         "context": model.get("context_length") or model.get("contextLength"),
         "inputs": ", ".join(modalities),
         "vision": "image" in modalities,
         "video": "video" in modalities,
+        "temp": _temp_type(slug),
+        "end": model.get("expiration_date") or "",
     }
 
 
@@ -154,8 +170,13 @@ def _get_json_http(url, headers):
         return json.loads(resp.read().decode("utf-8", "replace"), strict=False)
 
 
-def fetch_free_models():
-    """Return (list_of_free_models, meta_dict)."""
+def fetch_free_models(permanent_only=True):
+    """Return (list_of_free_models, meta_dict).
+
+    permanent_only drops preview/alpha/beta/exp models and anything with an
+    expiration_date, so the list holds models worth building a long-term
+    fallback chain on.
+    """
     auth = load_auth()
     portal = _get_json(auth["portal"] + "/api/nous/recommended-models", auth["token"])
     catalog = _get_json(auth["inference"] + "/models", auth["token"]).get("data", [])
@@ -178,6 +199,8 @@ def fetch_free_models():
 
     def add(record, source):
         name = record["name"]
+        record.setdefault("temp", _temp_type(name))
+        record.setdefault("end", "")
         existing = by_name.get(name)
         if existing is None:
             merged = dict(record, sources={source})
@@ -191,6 +214,10 @@ def fetch_free_models():
             existing["context"] = record["context"]
         if record["inputs"] != "text":
             existing["inputs"] = record["inputs"]
+        if not existing["temp"]:
+            existing["temp"] = record["temp"]
+        if not existing["end"]:
+            existing["end"] = record["end"]
 
     for rec in portal.get("freeRecommendedModels") or []:
         slug = rec.get("modelName")
@@ -277,6 +304,11 @@ def fetch_free_models():
         info.setdefault("vision", rec.get("vision", False))
         info.setdefault("video", rec.get("video", False))
         info.setdefault("compaction", rec.get("compaction", False))
+        info.setdefault("temp", rec.get("temp"))
+        info.setdefault("end", rec.get("end"))
+
+    if permanent_only:
+        results = [r for r in results if not r.get("temp") and not r.get("end")]
 
     return results, {
         "catalog_rows": len(catalog),

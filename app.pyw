@@ -14,7 +14,6 @@ import alerts
 import bubbles
 import hermes_state
 import nous_core
-import stealth
 import theme
 
 APP_NAME = "HFMM-beta"
@@ -27,22 +26,16 @@ SZ_HEAD = 13
 
 COLS = ("Model", "Context", "Inputs", "Price", "Flags", "Source")
 WIDTHS = {"Model": 360, "Context": 110, "Inputs": 160, "Price": 100, "Flags": 210, "Source": 120}
-CFG_COLS = ("Role", "Model", "Provider", "Context", "Flags", "Status", "Notes")
+CFG_COLS = ("Role", "Model", "Provider", "Context", "Flags", "Temp", "Status", "Notes")
 CFG_WIDTHS = {
     "Role": 190, "Model": 340, "Provider": 90, "Context": 110,
-    "Flags": 200, "Status": 100, "Notes": 240,
-}
-STEALTH_COLS = ("Model", "Context", "Flags", "Mentions", "Last seen", "Origin", "State", "Detail")
-STEALTH_WIDTHS = {
-    "Model": 260, "Context": 110, "Flags": 200, "Mentions": 90,
-    "Last seen": 170, "Origin": 120, "State": 120, "Detail": 260,
+    "Flags": 200, "Temp": 150, "Status": 100, "Notes": 240,
 }
 
 SZ_INFO = 14
 
 MODELS_REFRESH_MS = 15 * 60 * 1000
 DEEP_REFRESH_MS = 4 * 60 * 60 * 1000
-STEALTH_PROBE_MS = 5 * 60 * 1000
 POLL_MS = 3000
 UI_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ui_state.json")
 
@@ -93,14 +86,6 @@ class App(tk.Tk):
         self.selected_slug = None
         self._last_alerted_active = None
         self._flash_after_id = None
-        self.stealth_state = stealth.load_state()
-        self.stealth_rows = stealth.rows(self.stealth_state)
-        self.stealth_after_id = None
-        self._probing = False
-        self._mining = False
-        self.auto_probe_var = tk.BooleanVar(
-            value=bool(self.stealth_state.get("settings", {}).get("auto_probe"))
-        )
         self.bubbles_var = tk.BooleanVar(value=bool(self.ui.get("bubbles")))
         self.alert_history = []
         self._empty_frames = {}
@@ -129,9 +114,6 @@ class App(tk.Tk):
         self._schedule_poll()
         self._scroll_sync_after_id = None
         self.after(1000, self._scroll_sync_tick)
-        threading.Thread(target=self._mine_worker, daemon=True).start()
-        if self.auto_probe_var.get():
-            self.stealth_after_id = self.after(STEALTH_PROBE_MS, self._stealth_tick)
 
     # ---------- window geometry ----------
 
@@ -234,8 +216,6 @@ class App(tk.Tk):
         for model in self.models:
             self._insert(model)
         self._render_config(self.cfg_rows, self.usage_data)
-        if hasattr(self, "tree3"):
-            self._render_stealth()
         if hasattr(self, "tree") and hasattr(self.tree_hscroll, "winfo_exists"):
             self._autofit_columns(self.tree, self.tree_hscroll, self.tree_vscroll)
 
@@ -327,16 +307,12 @@ class App(tk.Tk):
         self.nb.pack(fill="both", expand=True, padx=14, pady=(4, 2))
         tab_free = tk.Frame(self.nb, bg=self._c("bg"))
         tab_cfg = tk.Frame(self.nb, bg=self._c("bg"))
-        tab_stealth = tk.Frame(self.nb, bg=self._c("bg"))
         self.nb.add(tab_free, text="Free models")
         self.nb.add(tab_cfg, text="Hermes config")
-        self.nb.add(tab_stealth, text="Stealth")
         self._build_catalog_tab(tab_free)
         self._build_config_tab(tab_cfg)
-        self._build_stealth_tab(tab_stealth)
         self.tree.bind("<<TreeviewSelect>>", self._on_tree_select)
         self.tree2.bind("<<TreeviewSelect>>", self._on_tree_select)
-        self.tree3.bind("<<TreeviewSelect>>", self._on_tree_select)
 
     def _build_detail_panel(self):
         p = self.palette
@@ -421,53 +397,6 @@ class App(tk.Tk):
             add="+",
         )
 
-    def _build_stealth_tab(self, parent):
-        p = self.palette
-        wrap = tk.Frame(parent, bg=p["bg"])
-        wrap.pack(fill="both", expand=True)
-
-        bar = tk.Frame(wrap, bg=p["bg"])
-        bar.pack(fill="x", padx=6, pady=(4, 2))
-        ttk.Button(bar, text="Probe selected", command=self.probe_selected).pack(side="left")
-        ttk.Button(bar, text="Probe all", command=self.probe_all).pack(side="left", padx=6)
-        ttk.Button(bar, text="Rescan log", command=self.rescan_log).pack(side="left")
-        ttk.Checkbutton(
-            bar, text="Auto probe (5 min)", variable=self.auto_probe_var,
-            command=self._toggle_auto_probe,
-        ).pack(side="right")
-
-        self.stealth_info = tk.Label(
-            wrap, text="", bg=p["bg"], fg=p["dim"], font=(FONT, SZ_INFO), anchor="w",
-        )
-        self.stealth_info.pack(fill="x", padx=6, pady=(2, 2))
-
-        inner = tk.Frame(wrap, bg=p["bg"])
-        inner.pack(fill="both", expand=True)
-
-        cols = STEALTH_COLS
-        sizes = STEALTH_WIDTHS
-        self.tree3 = ttk.Treeview(inner, columns=cols, show="headings", height=9)
-        for col in cols:
-            self.tree3.heading(col, text=col, anchor="w")
-            self.tree3.column(col, width=sizes[col], anchor="w")
-        self.tree3.pack(side="left", fill="both", expand=True)
-
-        self.tree3.tag_configure("alive", foreground=p["ok"])
-        self.tree3.tag_configure("missing", foreground=p["error"])
-        self.tree3.tag_configure("rate_limited", foreground=p["warn"])
-        self.tree3.tag_configure("unprobed", foreground=p["dim"])
-
-        self.tree3_vscroll = ttk.Scrollbar(inner, orient="vertical", command=self.tree3.yview)
-        self.tree3_vscroll.pack(side="right", fill="y")
-        self.tree3_hscroll = ttk.Scrollbar(inner, orient="horizontal", command=self.tree3.xview)
-        self.tree3_hscroll.pack(side="bottom", fill="x")
-        self.tree3.configure(yscrollcommand=self.tree3_vscroll.set, xscrollcommand=self.tree3_hscroll.set)
-        self.tree3.bind(
-            "<Configure>",
-            lambda _e: self._sync_vscroll(self.tree3, self.tree3_vscroll),
-            add="+",
-        )
-
     def _build_status(self):
         self.status = tk.Label(
             self, text="Connecting…", bg=self._c("bg"), fg=self._c("dim"),
@@ -485,7 +414,6 @@ class App(tk.Tk):
             parts.append(f"catalog updated {self.last_models}")
         if hasattr(self, "last_deep"):
             parts.append(f"Hermes config checked {self.last_deep}")
-        parts.append(f"stealth watch: {len(self.stealth_rows)}")
         self.status.configure(text="   ·   ".join(parts) or "Connecting…")
 
     def _flash_status(self, message, ms=2600):
@@ -648,7 +576,6 @@ class App(tk.Tk):
         pairs = (
             (getattr(self, "tree", None), getattr(self, "tree_vscroll", None), getattr(self, "tree_hscroll", None)),
             (getattr(self, "tree2", None), getattr(self, "tree2_vscroll", None), getattr(self, "tree2_hscroll", None)),
-            (getattr(self, "tree3", None), getattr(self, "tree3_vscroll", None), getattr(self, "tree3_hscroll", None)),
         )
         for tree, vscroll, hscroll in pairs:
             self._sync_vscroll(tree, vscroll)
@@ -753,6 +680,19 @@ class App(tk.Tk):
         flags = [name for name in ("vision", "video", "compaction") if info.get(name)]
         return ", ".join(flags) or "-"
 
+    @staticmethod
+    def _temp_text(info):
+        """Lifecycle column: preview/alpha/beta/exp marker and/or API end date."""
+        temp = info.get("temp") or ""
+        end = info.get("end") or ""
+        if temp and end:
+            return f"{temp} · ends {end}"
+        if temp:
+            return temp
+        if end:
+            return f"ends {end}"
+        return "-"
+
     def _insert(self, model):
         flags = []
         if model["vision"]:
@@ -792,6 +732,7 @@ class App(tk.Tk):
                     row["role"], row["model"], row["provider"],
                     f"{context:,}" if context else "?",
                     self._flags_text(info),
+                    self._temp_text(info),
                     status.upper(), detail,
                 ),
                 tags=(status,),
@@ -841,8 +782,6 @@ class App(tk.Tk):
             self.meta = meta
             self.catalog_meta = meta
             self.catalog_lookup = (meta or {}).get("catalog_lookup", {})
-            if hasattr(self, "tree3"):
-                self._render_stealth()  # context/flags columns may have just arrived
             if hasattr(self, "tree"):
                 self.tree.delete(*self.tree.get_children())
                 for model in models:
@@ -917,20 +856,11 @@ class App(tk.Tk):
                      f"   ·   Flags {values[4]}   ·   Source {values[5]}")
         elif tree is self.tree2:
             self.selected_slug = values[1]
-            status = values[5].lower()
+            status = values[6].lower()
             color = {"free": self._c("ok"), "paid": self._c("warn"), "missing": self._c("error")}.get(status)
             title = f"{values[0]}  →  {values[1]}"
             chips = (f"Provider {values[2]}   ·   Context {values[3]}   ·   Flags {values[4]}"
-                     f"   ·   Status {values[5]}   ·   {values[6]}")
-        elif tree is self.tree3:
-            self.selected_slug = values[0]
-            state = values[6].lower()
-            color = {"alive": self._c("ok"), "missing": self._c("error"),
-                     "rate_limited": self._c("warn")}.get(state)
-            title = values[0]
-            chips = (f"Context {values[1]}   ·   Flags {values[2]}   ·   Mentions {values[3]}"
-                     f"   ·   Last seen {values[4]}   ·   Origin {values[5]}"
-                     f"   ·   State {values[6]}   ·   {values[7]}")
+                     f"   ·   Temp {values[5]}   ·   Status {values[6]}   ·   {values[7]}")
 
         if hasattr(self, "detail_title"):
             self.detail_title.configure(
@@ -1219,132 +1149,6 @@ class App(tk.Tk):
             return
         removed = chain.pop(index)
         self._write_fallbacks(chain, f"Removed fallback #{index + 1}: {removed.get('model', '?')}")
-
-    # ---------- stealth ----------
-
-    def _mine_worker(self):
-        try:
-            stealth.mine_watchlist(self.stealth_state)
-        except Exception:
-            pass
-        try:
-            self.after(0, self._stealth_mined)
-        except RuntimeError:
-            pass
-
-    def _stealth_mined(self):
-        self._mining = False
-        self._refresh_stealth_rows()
-        self.stealth_info.configure(text=f"{len(self.stealth_rows)} tracked · log scanned")
-
-    def _refresh_stealth_rows(self):
-        self.stealth_rows = stealth.rows(self.stealth_state)
-        self._render_stealth()
-
-    def _render_stealth(self):
-        if not hasattr(self, "tree3"):
-            return
-        self.tree3.delete(*self.tree3.get_children())
-        for row in self.stealth_rows:
-            info = self._model_info(row["slug"])
-            context = info.get("context")
-            self.tree3.insert(
-                "", "end",
-                values=(
-                    row["slug"],
-                    f"{context:,}" if context else "?",
-                    self._flags_text(info),
-                    row["calls"], row["last_seen"], row["origin"],
-                    row["state"].upper(), row["detail"] or "-",
-                ),
-                tags=(row["state"],),
-            )
-        if self.stealth_rows:
-            self._clear_empty("stealth")
-        else:
-            self._empty_overlay(
-                "stealth", self.tree3.master,
-                "No stealth models tracked",
-                ["Stealth slugs are mined from logs/agent.log.",
-                 "Tip: run Rescan log after using an off-catalog model."],
-            )
-        self._autofit_columns(self.tree3, self.tree3_hscroll, self.tree3_vscroll)
-
-    def rescan_log(self):
-        if self._mining:
-            return
-        self._mining = True
-        self.stealth_info.configure(text="Scanning agent.log…")
-
-        def work():
-            try:
-                stealth.mine_watchlist(self.stealth_state)
-            except Exception as exc:  # noqa: BLE001
-                self.after(0, lambda: self.stealth_info.configure(text=f"Scan failed: {exc}"))
-                return
-            self.after(0, self._stealth_mined)
-
-        threading.Thread(target=work, daemon=True).start()
-
-    def probe_selected(self):
-        tree = getattr(self, "tree3", None)
-        if tree is None or not tree.selection():
-            return
-        slug = tree.item(tree.selection()[0])["values"][0]
-        self._run_probes([slug])
-
-    def probe_all(self):
-        slugs = [r["slug"] for r in self.stealth_rows]
-        if slugs:
-            self._run_probes(slugs)
-
-    def _run_probes(self, slugs):
-        if self._probing or not slugs:
-            return
-        self._probing = True
-        self.stealth_info.configure(text=f"Probing {len(slugs)} model(s)…")
-
-        def work():
-            for slug in slugs:
-                try:
-                    result = stealth.probe(slug)
-                except Exception as exc:  # noqa: BLE001
-                    result = {"state": "error", "detail": str(exc)[:160]}
-                found = stealth.record_probe(self.stealth_state, slug, result)
-                self.after(0, lambda s=slug, r=result, f=found: self._probe_done(s, r, f))
-            self.after(0, self._probes_finished)
-
-        threading.Thread(target=work, daemon=True).start()
-
-    def _probe_done(self, slug, result, found):
-        self._refresh_stealth_rows()
-        note = f"{slug}: {result['state']}"
-        if found:
-            note += f" (+{len(found)} from 429 alternates)"
-        self.stealth_info.configure(text=note)
-
-    def _probes_finished(self):
-        self._probing = False
-        alive = sum(1 for r in self.stealth_rows if r["state"] == "alive")
-        total = len(self.stealth_rows)
-        self.stealth_info.configure(text=f"Done · {alive}/{total} alive")
-        if total:
-            self._notify("Stealth probes", f"{alive}/{total} alive", "ok" if alive else "warn")
-
-    def _toggle_auto_probe(self):
-        self.stealth_state.setdefault("settings", {})["auto_probe"] = bool(self.auto_probe_var.get())
-        stealth.save_state(self.stealth_state)
-        if self.stealth_after_id:
-            self.after_cancel(self.stealth_after_id)
-            self.stealth_after_id = None
-        if self.auto_probe_var.get():
-            self.stealth_after_id = self.after(STEALTH_PROBE_MS, self._stealth_tick)
-
-    def _stealth_tick(self):
-        if self.auto_probe_var.get() and not self._probing:
-            self.probe_all()
-        if self.auto_probe_var.get():
-            self.stealth_after_id = self.after(STEALTH_PROBE_MS, self._stealth_tick)
 
     # ---------- timers ----------
 
