@@ -166,3 +166,20 @@ Remote: **https://github.com/luxotek/Hermes-Free-Model-Monitor** (renamed from `
 - Whether Hermes' own API calls can be intercepted to auto-capture 429 `alternates`
   (currently only app-initiated probes feed discovery).
 - Probe cadence default for stealth watches (manual now; 5 min opt-in toggle available).
+
+## Session handoff (2026-11-14)
+
+- **Beta worktree live**: experiments happen in `C:\Users\Luxotek\projects\hfmm-beta`
+  (git worktree, branch `beta`); `main` stays frozen at the released source in
+  `C:\Users\Luxotek\projects\nous-free-models`. Both run side by side — Start Menu
+  entries: "Hermes Free Model Monitor.lnk" (main) and
+  "Hermes Free Model Monitor (Beta).lnk".
+- Beta marks itself: window title/header show **HFMM-beta** (beta-only commit; do not
+  carry that rename into main — the release keeps the full name).
+- Finishing beta work: merge/cherry-pick `beta` → `main`, rebuild the exe, cut the next
+  release. Roadmap/todos live in this file on main; ideas can be tried in any order on
+  beta and rolled in early.
+- Ops note: scope process kills by process name + path — a broad
+  `CommandLine -like '*hfmm-beta*'` filter matched the launching shell's own script
+  text and killed the terminal mid-command.
+- Verified: both instances running with correct, distinct window titles.
