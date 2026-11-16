@@ -81,15 +81,17 @@ The window follows whatever skin the desktop Hermes app is using, repolled every
 - the Hermes skin engine (default, ares, mono, slate, daylight, warm-lightmode,
   poseidon, sisyphus, charizard, plus any user skins in `%LOCALAPPDATA%\hermes\skins`),
 - the desktop-only presets the CLI engine doesn't expose (cyberpunk, midnight,
-  ember, nous, github, catppuccin, everforest, solarized).
+  ember, nous, github, catppuccin, everforest, solarized, nous-alt).
 
 The dropdown shows the followed theme while in Auto mode (e.g. `Auto (cyberpunk)`);
 changes apply within one poll (~3 s), no restart needed. Picking a specific theme
 from the dropdown pins it instead of following (stored in `theme_choice.json`).
-Palette roles are normalised for contrast (text, dim labels, accents, and panel
-fills are nudged until they clear minimum contrast against the background), so
-light and dark presets both read correctly. If neither source resolves, a
-built-in dark palette is used.
+Each preset's **dark** variant is used — its hand-tuned `darkColors` block from
+`apps/shared/src/theme-presets.ts` — so following `github` paints GitHub Dark
+(`#0d1117`) instead of white, and dark-only themes are unchanged. Palette roles
+are normalised for contrast (text, dim labels, accents, and panel fills are
+nudged until they clear minimum contrast against the background). If neither
+source resolves, a built-in dark palette is used.
 
 ## AI notice & license
 

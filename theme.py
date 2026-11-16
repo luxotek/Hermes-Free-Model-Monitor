@@ -166,8 +166,25 @@ def _presets_path():
     )
 
 
+def _block(text, start):
+    """`text[start]` sits just past an opening brace; return (body, end_index)."""
+    depth, index = 1, start
+    while index < len(text) and depth:
+        char = text[index]
+        if char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+        index += 1
+    return text[start:index - 1], index
+
+
+def _color_map(block):
+    return dict(re.findall(r"([A-Za-z]+):\s*'(#[0-9a-fA-F]{3,8})'", block))
+
+
 def _load_presets():
-    """Parse `name: { colors: { ... } }` blocks out of theme-presets.ts."""
+    """Parse each preset's `{ colors, darkColors }` out of theme-presets.ts."""
     path = _presets_path()
     try:
         mtime = os.path.getmtime(path)
@@ -182,21 +199,19 @@ def _load_presets():
         return {}
 
     palettes = {}
-    pattern = re.compile(r"^  ([A-Za-z][A-Za-z0-9-]*):\s*\{\s*colors:\s*\{", re.M)
-    for match in pattern.finditer(text):
-        start = match.end()
-        depth, index = 1, start
-        while index < len(text) and depth:
-            char = text[index]
-            if char == "{":
-                depth += 1
-            elif char == "}":
-                depth -= 1
-            index += 1
-        block = text[start:index - 1]
-        colors = dict(re.findall(r"([A-Za-z]+):\s*'(#[0-9a-fA-F]{3,8})'", block))
-        if colors:
-            palettes[match.group(1)] = colors
+    entry = re.compile(r"^  (['\"]?)([A-Za-z][A-Za-z0-9-]*)\1:\s*\{", re.M)
+    for match in entry.finditer(text):
+        body, _ = _block(text, match.end())
+        found = {}
+        for key in ("colors", "darkColors"):
+            sub = re.search(rf"\b{key}:\s*\{{", body)
+            if sub:
+                block, _ = _block(body, sub.end())
+                colors = _color_map(block)
+                if colors:
+                    found[key] = colors
+        if found.get("colors"):
+            palettes[match.group(2)] = found
 
     _preset_cache["mtime"] = mtime
     _preset_cache["palettes"] = palettes
@@ -207,8 +222,16 @@ def preset_names():
     return sorted(_load_presets())
 
 
-def preset_palette(name):
-    colors = _load_presets().get(name)
+def preset_palette(name, dark=True):
+    """Palette for a desktop preset.
+
+    `dark` picks the preset's hand-tuned dark variant when it ships one. The
+    light-mode presets (github, nous, catppuccin, everforest, solarized) are
+    white by default, which reads wrong on a dark-mode desktop.
+    """
+    preset = _load_presets().get(name) or {}
+    colors = preset.get("darkColors") if dark else preset.get("colors")
+    colors = colors or preset.get("colors")
     if not colors:
         return None
     get = colors.get
