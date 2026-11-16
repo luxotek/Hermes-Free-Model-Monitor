@@ -153,14 +153,17 @@ for a model comes from the route the APIs report (or from Hermes's own
 
 ## OpenRouter free models
 
-When a valid OpenRouter token is present (from the Hermes `.env`, or `auth.json`'s
-credential pool), the **Free models** tab also pulls OpenRouter's
-`GET /api/v1/models` catalog. A model is listed as free when it carries the
-`:free` suffix, or charges `$0` for input, or `$0` for output:
+The **Free models** tab always pulls OpenRouter's `GET /api/v1/models` catalog —
+the endpoint is public, so no token is needed just to look. When a valid
+OpenRouter token is present (Hermes's `.env`, or `auth.json`'s credential pool)
+it is sent along, because the authenticated payload is the set your key can
+actually call. A model is listed as free when it carries the `:free` suffix, or
+charges `$0` for both input and output:
 
-- OR's official free marker is the `:free` suffix (7 models today);
-- `scaledown/extract` and `scaledown/summarize` are `$0` to *complete* (input
-  costs a few hundred-thousandths of a cent), so they're included too;
+- the `:free` suffix is OR's official free marker (7 models today);
+- `google/lyria-3-clip-preview` and `google/lyria-3-pro-preview` are `$0` end to
+  end without the marker, so the price test catches them;
+- `openrouter/free` is OR's own catch-all free endpoint;
 - the count grows and shrinks as OpenRouter onboard new providers — it is a live
   number, not a fixed list.
 
@@ -169,6 +172,12 @@ credential pool), the **Free models** tab also pulls OpenRouter's
 > effectively-free models with tiny-but-nonzero endpoint prices and models the
 > authenticated API payload doesn't return. HFMM lists the *live API* count, so
 > it reflects what OpenRouter publishes right now.
+
+**Using one needs your own key.** The daily-pool line (`OpenRouter free pool:
+…`) comes from `/api/v1/key` and stays hidden without a token. Setting an
+OpenRouter model as Hermes's main model with no token opens a dark sheet instead
+of writing anything: sign-up and keys links, the exact `.env` line to add, and
+the path to Hermes's `.env`. The models stay listed either way.
 
 ## Files
 

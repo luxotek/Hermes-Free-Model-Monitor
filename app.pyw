@@ -34,6 +34,9 @@ SZ_INFO = 14
 SZ_POPUP = 14        # Additional info popup body
 SZ_POPUP_META = 13   # Additional info popup meta lines
 
+OPENROUTER_SIGNUP_URL = "https://openrouter.ai/sign-up"
+OPENROUTER_KEYS_URL = "https://openrouter.ai/keys"
+
 MODELS_REFRESH_MS = 15 * 60 * 1000
 DEEP_REFRESH_MS = 4 * 60 * 60 * 1000
 POLL_MS = 3000
@@ -1021,7 +1024,9 @@ class App(tk.Tk):
                 try:
                     models_out, meta_out = nous_core.fetch_free_models()
                 except Exception as exc:  # noqa: BLE001
-                    self.after(0, lambda: self._show_error(exc))
+                    # Bind it: Python clears `exc` when the except block ends, so a
+                    # bare closure over it raises NameError inside the callback.
+                    self.after(0, lambda e=exc: self._show_error(e))
                     return
             if deep:
                 try:
@@ -1396,6 +1401,66 @@ class App(tk.Tk):
         self.info.configure(text="")
         self._notify("Refresh failed", str(error)[:160], "critical")
 
+    def _show_openrouter_help(self, slug):
+        """Dark sheet explaining how to get an OpenRouter key into Hermes.
+
+        The list is free to read, so the models stay listed without a token —
+        but calling one needs the user's own key, and this is where they get it.
+        """
+        p = self.palette
+        win = tk.Toplevel(self)
+        win.title("OpenRouter token needed")
+        win.configure(bg=p["bg"])
+        win.resizable(False, False)
+        win.transient(self)
+
+        tk.Label(win, text="OpenRouter token needed", bg=p["bg"], fg=p["fg"],
+                 font=("Segoe UI Semibold", SZ_POPUP)).pack(padx=32, pady=(26, 8))
+        tk.Label(win, text=f"{slug} is served by OpenRouter. Listing it is free,\n"
+                           "but calling it needs your own OpenRouter API key\n"
+                           "in Hermes — HFMM never sees or stores it.",
+                 bg=p["bg"], fg=p["dim"], font=(FONT, SZ_INFO),
+                 justify="left").pack(padx=32, pady=(0, 16))
+
+        def link(text, url, y):
+            lb = tk.Label(win, text=text, bg=p["bg"], fg=p["accent"],
+                          font=(FONT, SZ_INFO, "underline"), cursor="hand2")
+            lb.pack(anchor="w", padx=32, pady=y)
+            lb.bind("<Button-1>", lambda _e: webbrowser.open(url))
+
+        def step(text, y):
+            tk.Label(win, text=text, bg=p["bg"], fg=p["fg"],
+                     font=(FONT, SZ_INFO)).pack(anchor="w", padx=32, pady=y)
+
+        step("1.  Create a free OpenRouter account", (0,))
+        link("      " + OPENROUTER_SIGNUP_URL, OPENROUTER_SIGNUP_URL, (0,))
+        step("2.  Make an API key", (10,))
+        link("      " + OPENROUTER_KEYS_URL, OPENROUTER_KEYS_URL, (0,))
+        step("3.  Add it to Hermes's .env — the file Hermes loads:", (10,))
+        env_path = os.path.join(nous_core.hermes_home() or
+                                os.path.join(os.environ.get("LOCALAPPDATA", ""), "hermes"),
+                                ".env")
+        tk.Label(win, text=f"      OPENROUTER_API_KEY=sk-or-…\n      {env_path}",
+                 bg=p["bg"], fg=p["dim"], font=(FONT, SZ_POPUP_META),
+                 justify="left").pack(anchor="w", padx=32, pady=(0, 14))
+        tk.Label(win, text="Then hit Refresh — the models stay listed either way.",
+                 bg=p["bg"], fg=p["dim"], font=(FONT, SZ_INFO)).pack(anchor="w", padx=32)
+
+        row = tk.Frame(win, bg=p["bg"])
+        row.pack(fill="x", padx=32, pady=(20, 24))
+        ttk.Button(row, text="Close", command=win.destroy).pack(side="right")
+        ttk.Button(row, text="Open sign-up page",
+                   command=lambda: webbrowser.open(OPENROUTER_SIGNUP_URL)).pack(
+            side="right", padx=(0, 8))
+
+        win.bind("<Escape>", lambda _e: win.destroy())
+        win.update_idletasks()
+        w, h = win.winfo_reqwidth(), win.winfo_reqheight()
+        x = self.winfo_rootx() + max((self.winfo_width() - w) // 2, 0)
+        y = self.winfo_rooty() + max((self.winfo_height() - h) // 2, 0)
+        win.geometry(f"{w}x{h}+{x}+{y}")
+        win.lift()
+
     def set_main_model(self):
         slug = self.selected_slug
         if not slug:
@@ -1405,6 +1470,12 @@ class App(tk.Tk):
             messagebox.showwarning(
                 "No model selected", f"{slug} isn't on the live free model list.\nPick a model in the Free models table."
             )
+            return
+        row = next((m for m in self.models if m.get("name") == slug), None)
+        if (row and row.get("route") == "openrouter"
+                and not nous_core.openrouter_key()):
+            self._flash_status(f"OpenRouter token needed for {slug}")
+            self._show_openrouter_help(slug)
             return
         if not messagebox.askyesno(
             "Set main model",
@@ -1555,7 +1626,7 @@ class App(tk.Tk):
             try:
                 hermes_state.set_fallbacks(chain)
             except Exception as exc:  # noqa: BLE001
-                self.after(0, lambda: self._fallback_failed(exc))
+                self.after(0, lambda e=exc: self._fallback_failed(e))
                 return
             self.after(0, lambda: self._fallback_written(note))
 

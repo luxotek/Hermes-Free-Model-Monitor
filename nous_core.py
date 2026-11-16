@@ -353,37 +353,38 @@ def fetch_free_models(permanent_only=True):
         if slug not in by_name:
             add(row, "catalog")
 
+    # The models endpoint is public — no token needed to see the catalogue. Send
+    # one when we have it (the authenticated payload is the set the key can
+    # actually call) and fall back to the unauthenticated list when we don't.
     or_key = openrouter_key()
-    or_count = 0
+    or_headers = dict(_OPENROUTER_HEADERS)
     if or_key:
-        try:
-            payload = _get_json_http(
-                _OPENROUTER_MODELS_URL,
-                {"Authorization": f"Bearer {or_key}", **_OPENROUTER_HEADERS},
-            )
-        except Exception:  # noqa: BLE001
-            pass
-        else:
-            for model in payload.get("data", []):
-                rid = model.get("id") or model.get("model") or ""
-                pricing = model.get("pricing") or {}
-                # Free on OpenRouter: the :free marker, or $0 input AND $0 output.
-                free_marker = rid.endswith(":free")
-                zero_in_out = (_price_is_free(pricing.get("prompt"))
-                               and _price_is_free(pricing.get("completion")))
-                if not (free_marker or zero_in_out):
-                    continue
-                row = dict(_catalog_info(model))
-                row["name"] = model.get("id")
-                row["compaction"] = False
-                row["source"] = "openrouter"
-                # These came from OpenRouter's own models endpoint.
-                row["route"] = "openrouter"
-                extra = dict(row.get("extra") or {})
-                extra["or_slug"] = model.get("id")
-                row["extra"] = extra
-                add(row, "openrouter")
-                or_count += 1
+        or_headers["Authorization"] = f"Bearer {or_key}"
+    or_count = 0
+    try:
+        payload = _get_json_http(_OPENROUTER_MODELS_URL, or_headers)
+    except Exception:  # noqa: BLE001
+        payload = {}
+    for model in payload.get("data", []):
+        rid = model.get("id") or model.get("model") or ""
+        pricing = model.get("pricing") or {}
+        # Free on OpenRouter: the :free marker, or $0 input AND $0 output.
+        free_marker = rid.endswith(":free")
+        zero_in_out = (_price_is_free(pricing.get("prompt"))
+                       and _price_is_free(pricing.get("completion")))
+        if not (free_marker or zero_in_out):
+            continue
+        row = dict(_catalog_info(model))
+        row["name"] = model.get("id")
+        row["compaction"] = False
+        row["source"] = "openrouter"
+        # These came from OpenRouter's own models endpoint.
+        row["route"] = "openrouter"
+        extra = dict(row.get("extra") or {})
+        extra["or_slug"] = model.get("id")
+        row["extra"] = extra
+        add(row, "openrouter")
+        or_count += 1
 
     results = []
     for name, rec in sorted(by_name.items()):
