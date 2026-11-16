@@ -418,9 +418,23 @@ class App(tk.Tk):
 
     # ---------- settings / about ----------
 
+    def _close_popups(self):
+        """Only one popup at a time: drop any sheet already open."""
+        for attr in ("_info_win", "_settings_win"):
+            win = getattr(self, attr, None)
+            if win is not None:
+                try:
+                    if win.winfo_exists():
+                        win.destroy()
+                except Exception:  # noqa: BLE001
+                    pass
+                setattr(self, attr, None)
+
     def open_settings(self):
+        self._close_popups()
         p = self.palette
         win = tk.Toplevel(self)
+        self._settings_win = win
         win.title(f"Settings — {APP_NAME}")
         win.configure(bg=p["bg"])
         win.resizable(False, False)
@@ -515,6 +529,7 @@ class App(tk.Tk):
 
     def open_model_info(self):
         """Popup sheet for the selected row — everything the panel used to squeeze in."""
+        self._close_popups()
         p = self.palette
         picked = self._selected_model()
         if picked is None:
