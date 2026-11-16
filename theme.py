@@ -13,6 +13,8 @@ import os
 import re
 import sys
 
+import nous_core
+
 CHOICE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "theme_choice.json")
 
 FALLBACK_PALETTE = {
@@ -29,7 +31,8 @@ FALLBACK_NAMES = [
 
 
 def _hermes_home():
-    return (
+    """Hermes home: the directory holding auth.json, else the install default."""
+    return nous_core.hermes_home() or (
         os.environ.get("HERMES_HOME")
         or os.path.join(os.environ.get("LOCALAPPDATA", ""), "hermes")
         or os.path.expanduser("~/.hermes")

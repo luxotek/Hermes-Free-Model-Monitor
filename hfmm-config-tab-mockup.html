@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>HFMM config tab + popup (layout B, live data)</title>
+<style>
+  :root { color-scheme: dark; }
+  body {
+    margin: 0; padding: 22px 26px 30px;
+    background: #12151c; color: #e6e9ef;
+    font-family: "Segoe UI", system-ui, sans-serif; font-size: 13px;
+  }
+  .win {
+    background: #171b24; border: 1px solid #2a3140; border-radius: 10px;
+    padding: 14px 16px 18px; width: 1076px;
+  }
+  .tabs { display: flex; gap: 6px; margin-bottom: 12px; }
+  .tab { padding: 6px 16px; border-radius: 6px; background: #1d222d; color: #9aa4b6; }
+  .tab.on { background: #263043; color: #e6e9ef; font-weight: 600; }
+  table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+  th {
+    text-align: left; font-size: 11px; letter-spacing: .06em; color: #8b95a7;
+    font-weight: 600; padding: 0 10px 6px; border-bottom: 1px solid #2a3140;
+  }
+  td {
+    padding: 0 10px; height: 38px; border-bottom: 1px solid #202634;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .role { color: #9aa4b6; }
+  .mono { font-family: "Cascadia Mono", Consolas, monospace; font-size: 12.5px; }
+  .ok { color: #4ade80; }
+  .bad { color: #f87171; }
+  .amber { color: #fbbf24; }
+  .dim { color: #7f8aa0; }
+  .err { font-family: "Cascadia Mono", Consolas, monospace; font-size: 12px; }
+  .calls { text-align: right; color: #9aa4b6; }
+  .cap { margin-top: 14px; color: #6f7b90; font-size: 11.5px; }
+</style>
+</head>
+<body>
+<div class="win">
+  <div class="tabs">
+    <div class="tab">Free models</div>
+    <div class="tab on">Hermes config</div>
+  </div>
+  <table>
+    <colgroup>
+      <col style="width:170px"><col style="width:338px"><col style="width:296px">
+      <col style="width:395px"><col style="width:64px">
+    </colgroup>
+    <thead>
+      <tr><th>Role</th><th>Model</th><th>Status</th><th>Last error</th><th style="text-align:right">Calls</th></tr>
+    </thead>
+    <tbody>
+      <tr><td class="role">main (default)</td><td class="mono">meituan/longcat-2.5:free</td>
+        <td class="ok">FREE · in live free list</td><td class="err">11/16/2026 · 429 at capacity ×55</td><td class="calls">1701</td></tr>
+      <tr><td class="role">aux: vision</td><td class="mono">google/gemma-4-31b-it:free</td>
+        <td class="ok">FREE · in live free list</td><td class="err">No error</td><td class="calls">0</td></tr>
+      <tr><td class="role">aux: compression</td><td class="mono">stepfun/step-3.7-flash:free</td>
+        <td class="ok">FREE · in live free list</td><td class="err">11/16/2026 · 429 rate limit ×12 · retry 3h36m</td><td class="calls">3</td></tr>
+      <tr><td class="role">fallback #1</td><td class="mono">meituan/longcat-2.5:free</td>
+        <td class="ok">FREE · in live free list</td><td class="err">11/16/2026 · 429 at capacity ×55</td><td class="calls">1701</td></tr>
+      <tr style="background:#1b1f29"><td class="role">fallback #2</td><td class="mono amber">baidu/ernie-5.5-flash-preview:free</td>
+        <td class="bad">MISSING · not in catalog (dead?)</td><td class="err">11/16/2026 · 404 gone ×8</td><td class="calls">0</td></tr>
+      <tr><td class="role">fallback #3</td><td class="mono">stepfun/step-3.7-flash:free</td>
+        <td class="ok">FREE · in live free list</td><td class="err">11/16/2026 · 429 rate limit ×12 · retry 3h36m</td><td class="calls">3</td></tr>
+      <tr><td class="role">fallback #4</td><td class="mono">upstage/solar-mini4:free</td>
+        <td class="ok">FREE · in live free list</td><td class="err">11/15/2026 · 429 at capacity ×8</td><td class="calls">439</td></tr>
+      <tr style="background:#1b1f29"><td class="role">fallback #5</td><td class="mono amber">dots-studio/dots-3-note-preview:free</td>
+        <td class="bad">MISSING · not in catalog (dead?)</td><td class="err">11/15/2026 · 404 gone ×2</td><td class="calls">0</td></tr>
+      <tr><td class="role">fallback #6</td><td class="mono">openrouter/free</td>
+        <td class="ok">FREE · in live free list</td><td class="err">11/15/2026 · 404 gone ×3</td><td class="calls">0</td></tr>
+    </tbody>
+  </table>
+  <div class="cap">9 rows · columns sized to content (1263 px total) · single-line, row height 38</div>
+</div>
+
+<div class="win" style="margin-top:18px; width:760px">
+  <div style="font-size:15px; font-weight:600; margin-bottom:14px">
+    Additional info — <span class="mono" style="font-weight:400">meituan/longcat-2.5:free</span>
+  </div>
+  <div style="display:flex; gap:14px; flex-wrap:wrap">
+    <div style="flex:1 1 200px">
+      <div class="dim" style="font-size:10.5px; letter-spacing:.08em; font-weight:600; margin-bottom:3px">VERDICT</div>
+      <div class="ok">FREE · in live free list</div>
+    </div>
+    <div style="flex:1 1 200px">
+      <div class="dim" style="font-size:10.5px; letter-spacing:.08em; font-weight:600; margin-bottom:3px">LIFECYCLE</div>
+      <div>None</div>
+    </div>
+    <div style="flex:1 1 200px">
+      <div class="dim" style="font-size:10.5px; letter-spacing:.08em; font-weight:600; margin-bottom:3px">FAILOVER</div>
+      <div style="color:#7dd3fc">→ baidu/ernie-5.5-flash-preview:free ×7</div>
+    </div>
+    <div style="flex:1 1 200px">
+      <div class="dim" style="font-size:10.5px; letter-spacing:.08em; font-weight:600; margin-bottom:3px">RECENT CALLS</div>
+      <div>1684</div>
+    </div>
+    <div style="flex:1 1 200px">
+      <div class="dim" style="font-size:10.5px; letter-spacing:.08em; font-weight:600; margin-bottom:3px">SOURCE</div>
+      <div>portal</div>
+    </div>
+    <div style="flex:1 1 200px">
+      <div class="dim" style="font-size:10.5px; letter-spacing:.08em; font-weight:600; margin-bottom:3px">PROVIDER</div>
+      <div>nous</div>
+    </div>
+  </div>
+  <div class="dim" style="margin-top:12px">No extra flags reported</div>
+  <div class="dim" style="margin-top:6px; font-size:12px">Full description on Nous Portal →</div>
+</div>
+
+<div class="win" style="margin-top:18px; width:760px">
+  <div style="font-size:15px; font-weight:600; margin-bottom:14px">
+    Additional info — <span class="mono" style="font-weight:400">baidu/ernie-5.5-flash-preview:free</span>
+  </div>
+  <div style="display:flex; gap:14px; flex-wrap:wrap">
+    <div style="flex:1 1 200px">
+      <div class="dim" style="font-size:10.5px; letter-spacing:.08em; font-weight:600; margin-bottom:3px">VERDICT</div>
+      <div class="bad">MISSING · not in catalog (dead?)</div>
+    </div>
+    <div style="flex:1 1 200px">
+      <div class="amber" style="font-size:10.5px; letter-spacing:.08em; font-weight:600; margin-bottom:3px">LIFECYCLE</div>
+      <div class="amber">PREVIEW</div>
+    </div>
+    <div style="flex:1 1 200px">
+      <div class="dim" style="font-size:10.5px; letter-spacing:.08em; font-weight:600; margin-bottom:3px">FAILOVER</div>
+      <div style="color:#7dd3fc">← meituan/longcat-2.5:free ×7</div>
+    </div>
+    <div style="flex:1 1 200px">
+      <div class="dim" style="font-size:10.5px; letter-spacing:.08em; font-weight:600; margin-bottom:3px">RECENT CALLS</div>
+      <div>0</div>
+    </div>
+    <div style="flex:1 1 200px">
+      <div class="dim" style="font-size:10.5px; letter-spacing:.08em; font-weight:600; margin-bottom:3px">SOURCE</div>
+      <div>portal</div>
+    </div>
+    <div style="flex:1 1 200px">
+      <div class="dim" style="font-size:10.5px; letter-spacing:.08em; font-weight:600; margin-bottom:3px">PROVIDER</div>
+      <div>nous</div>
+    </div>
+  </div>
+  <div class="dim" style="margin-top:12px">No extra flags reported</div>
+  <div class="dim" style="margin-top:6px; font-size:12px">Full description on Nous Portal →</div>
+</div>
+
+<div class="cap" style="width:1076px">
+  Amber row + amber LIFECYCLE section = the same cause, in the same colour.
+</div>
+</body>
+</html>

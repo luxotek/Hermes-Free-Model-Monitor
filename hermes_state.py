@@ -4,10 +4,14 @@ import json
 import os
 import re
 import subprocess
+import threading
 import urllib.error
 import urllib.request
 
-from nous_core import hermes_home
+from nous_core import hermes_home, load_auth
+
+# One `hermes config get` call per key; see configured_models().
+_CONFIG_KEYS = ("model.default", "model.provider", "auxiliary", "fallback_providers")
 
 CALL_RE = re.compile(r"API call #\d+: model=(\S+) provider=(\S+)")
 FALLBACK_RE = re.compile(r"Fallback activated: (\S+) → (\S+) \((\S+)\)")
@@ -135,6 +139,18 @@ def _parse_fallback_blocks(raw):
     return entries
 
 
+# The portal reports where each model is served as `source`: "local" is Nous's
+# own inference, "openrouter" is the OpenRouter provider. Hermes names the first
+# one "nous", which is the only translation in this table — everything else is
+# read straight off the API response.
+ROUTE_PROVIDER = {"local": "nous", "openrouter": "openrouter"}
+
+
+def provider_for_route(route):
+    """Hermes provider id for a model's reported route; None when unknown."""
+    return ROUTE_PROVIDER.get(str(route or "").strip().lower())
+
+
 def fallback_chain():
     """The fallback chain exactly as configured, extra keys (base_url, api_key…) intact."""
     raw = _RAW.get("fallback_providers")
@@ -164,17 +180,35 @@ def set_fallbacks(entries):
 def configured_models():
     """Every model Hermes has pinned: main, auxiliary tasks, fallback chain."""
     _RAW.clear()
+    # `hermes config get` takes one key at a time and costs ~1.2 s per call, so
+    # the four reads run concurrently instead of serially.
+    out = {}
+
+    def one(key):
+        try:
+            out[key] = _get(key)
+        except Exception:
+            out[key] = ""
+
+    workers = [threading.Thread(target=one, args=(key,)) for key in _CONFIG_KEYS]
+    for worker in workers:
+        worker.start()
+    for worker in workers:
+        worker.join()
+
     rows = []
-    main = _get("model.default")
+    main = out.get("model.default", "")
     if main:
         rows.append({
             "role": "main (default)",
-            "provider": _get("model.provider") or "nous",
+            "provider": out.get("model.provider", "") or "nous",
             "model": main,
         })
-    for section, provider, model in _parse_aux(_get("auxiliary")):
+    for section, provider, model in _parse_aux(out.get("auxiliary", "")):
         rows.append({"role": f"aux: {section}", "provider": provider or "?", "model": model})
-    for index, (provider, model) in enumerate(_parse_fallback(_get("fallback_providers")), 1):
+    for index, (provider, model) in enumerate(
+        _parse_fallback(out.get("fallback_providers", "")), 1
+    ):
         rows.append({"role": f"fallback #{index}", "provider": provider or "?", "model": model})
     return rows
 
@@ -306,7 +340,7 @@ def probe_rate_limit(model, timeout=40):
     close the account is to its fair-share limit (50 requests / 60 s, 2100 / h).
     They come back on a 429 too, so a refusal still answers the question.
     """
-    auth = nous_core_auth()
+    auth = load_auth()
     body = json.dumps({
         "model": model,
         "messages": [{"role": "user", "content": "hi"}],
@@ -353,11 +387,4 @@ def probe_rate_limit(model, timeout=40):
         "remaining_1h": integer("x-ratelimit-remaining-requests-1h"),
         "policy": headers.get("ratelimit-policy", ""),
     }
-
-
-def nous_core_auth():
-    """The Nous credentials, imported lazily so hermes_state stays importable."""
-    import nous_core
-
-    return nous_core.load_auth()
 

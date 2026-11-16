@@ -28,21 +28,21 @@ Double-click **`run.ps1`** (right-click > Run with PowerShell) or **`run.cmd`**.
   with an expiration date are left off so the list stays safe to build a chain
   on;
   *Hermes config* = everything Hermes has pinned (`model.default`, auxiliary
-  task models, fallback chain) classified as `FREE` / `PAID` / `MISSING`, with
-  a **Temp** column flagging previews and expiry dates.
-- **Config tab columns**: `Role · Model · Status · Notes · Temp · Last error ·
-  Fallback · Calls`. Provider, Context and Flags are gone (the Free tab already
-  shows them). **Last error** is the newest `API call failed … model=…` line for
-  that slug (`429 rate limit ×43`, `404 gone ×7`), and appends the server's
-  asked-for delay for a 429 (`· retry 1h53m`). **Fallback** is the last
-  `Fallback activated: A → B` the slug took part in — `→ X` when it failed over
-  to X, `← Y` when it caught one. **Calls** is that slug's `API call #N` count.
-- **Columns fit the panel, live.** Each column is sized to its own widest cell
-  (plus a little slack); if the total is wider than the panel they scale down
-  and the cells wrap, instead of scrolling sideways. Resizing the window
-  re-fits and re-wraps. Rows grow to fit (ttk rows are one height for the whole
-  table, capped at three lines), and words too long for a column break after
-  `/` and `-` so a model id wraps rather than spilling past the edge.
+  task models, fallback chain) in one row each, classified as `FREE` / `PAID` /
+  `MISSING`.
+- **Config tab columns**: `Role · Model · Status · Last error · Calls`. Rows stay
+  single-line. **Status** is the verdict plus the reason (`FREE · in live free
+  list`, `PAID · not free on any source`, `MISSING · not in catalog (dead?)`).
+  A model whose name carries `preview` / `temp` / `alpha` / `beta` … renders
+  amber, and the *Additional info* sheet says which marker caused it, in the
+  same colour. **Last error** is the newest `API call failed …` line for that
+  slug, in the order `MM/DD/YYYY · 429 rate limit ×43 · retry 1h53m`; a model
+  that has never failed reads `No error`. **Calls** is that slug's `API call #N`
+  count. Lifecycle, failover, provider and source live in the Additional-info
+  popup rather than in extra columns.
+- **Columns are sized to their content**: each column fits its own widest cell,
+  nothing wraps, and if the table is wider than the panel a horizontal scrollbar
+  appears instead of squeezing. Resizing the window re-checks both scrollbars.
 - **Footer, top to bottom**: tabs → *Additional info* button → free-tier limits
   (`Nous free tier: 48/50 requests · resets in 53s · OpenRouter free pool:
   50/50 today` — the Nous half from the `x-ratelimit-*` response headers via one
@@ -50,10 +50,15 @@ Double-click **`run.ps1`** (right-click > Run with PowerShell) or **`run.cmd`**.
   The limits and usage lines are window-level, not tab-level.
 
 - **Additional info**: select a row (any tab), then use the button above the
-  status line or the right-click menu entry to open a popup sheet with the full
-  picture — column values, moderation/reasoning/free-tier flags, the catalog
-  description and any benchmark scores. Right-justified to the window, vertically
-  centred, and never taller than the tab panel.
+  status line or the right-click menu entry to open a popup sheet laid out as
+  label-above-value sections — the config tab shows `VERDICT · LIFECYCLE ·
+  FAILOVER · RECENT CALLS · SOURCE · PROVIDER`, the free tab `CONTEXT · INPUTS ·
+  OUTPUT · RELEASED · SOURCE` — followed by the moderation/reasoning/free-tier
+  chips, the catalog description and any benchmark scores. Fixed size (not
+  resizable) and right-justified to the window: it grows to its content but is
+  capped so the header plus a readable slice of description plus the Close
+  button always fit — the description scrolls rather than pushing Close off the
+  window. Clamped on-screen.
 - **Bubbles**: self-contained toast cards in the window's bottom-right corner
   (UniGetUI-style): newest at the bottom, stack upward, auto-dismiss by severity,
   click to close. Fired on model alerts, active-model loss, probe summaries, and
@@ -63,8 +68,6 @@ Double-click **`run.ps1`** (right-click > Run with PowerShell) or **`run.cmd`**.
 - **Window geometry** is remembered: it reopens at the size and position you
   left it in (saved in `ui_state.json`, debounced while resizing). If the saved
   spot is off-screen, it keeps the size and centers instead.
-- **Columns auto-fit** their content; if the window is narrower than the table,
-  a horizontal scrollbar appears (no dead space).
 - **Empty states**: panes with nothing to show display a centered tip block instead
   of dead whitespace.
 - **Fallback chain editing**
@@ -74,6 +77,11 @@ Double-click **`run.ps1`** (right-click > Run with PowerShell) or **`run.cmd`**.
     stay put), or right-click a fallback row → **Remove fallback #N**.
   - Changes are written with `hermes config set fallback_providers`; replaced
     entries keep any extra keys (`base_url`, `api_key`, …).
+  - Each entry's `provider` comes from the model's own reported route: the
+    portal's per-model `source` (`local` → `nous`, `openrouter` → `openrouter`)
+    or, for models found through OpenRouter's models endpoint, `openrouter`.
+    Nothing is assumed to be Nous — a model whose route is unknown is refused
+    rather than written with a guessed provider.
 - **Copy model name**: right-click a row (or double-click it) to copy the model
   string — e.g. `meituan/longcat-2.5:free` — ready to paste into `/model ...`
   or a config.

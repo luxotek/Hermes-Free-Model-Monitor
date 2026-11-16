@@ -37,16 +37,15 @@ def load_auth():
     }
 
 
-def _get_json(url, token):
-    req = urllib.request.Request(
-        url,
-        headers={
-            "Authorization": "Bearer " + token,
-            "User-Agent": "hfmm/1.0",
-        },
-    )
+def _get_json_http(url, headers):
+    req = urllib.request.Request(url, headers=headers)
     with urllib.request.urlopen(req, timeout=30) as resp:
         return json.loads(resp.read().decode("utf-8", "replace"), strict=False)
+
+
+def _get_json(url, token):
+    """GET with a Bearer token — what the Portal and inference APIs both take."""
+    return _get_json_http(url, {"Authorization": "Bearer " + token, "User-Agent": "hfmm/1.0"})
 
 
 def _price_is_free(value):
@@ -130,6 +129,9 @@ def _catalog_info(model):
         "end": model.get("expiration_date") or "",
         "output": (model.get("top_provider") or {}).get("max_completion_tokens"),
         "created": model.get("created"),
+        # This endpoint is Nous's own /models, so its entries are served by
+        # Nous unless the portal's per-model `source` says otherwise.
+        "route": "local",
         "extra": _catalog_extra(model),
     }
 
@@ -142,6 +144,9 @@ def _catalog_row(model, source="catalog"):
     row["name"] = model.get("id")
     row["compaction"] = False
     row["source"] = source
+    # This catalog IS Nous's inference /models endpoint, so its entries are
+    # served by Nous unless the portal says otherwise.
+    row["route"] = "local"
     return row
 
 
@@ -242,12 +247,6 @@ def openrouter_pool():
     }
 
 
-def _get_json_http(url, headers):
-    req = urllib.request.Request(url, headers=headers)
-    with urllib.request.urlopen(req, timeout=30) as resp:
-        return json.loads(resp.read().decode("utf-8", "replace"), strict=False)
-
-
 def fetch_free_models(permanent_only=True):
     """Return (list_of_free_models, meta_dict).
 
@@ -282,12 +281,15 @@ def fetch_free_models(permanent_only=True):
         record.setdefault("output", None)
         record.setdefault("created", None)
         record.setdefault("extra", None)
+        record.setdefault("route", "")
         existing = by_name.get(name)
         if existing is None:
             merged = dict(record, sources={source})
             by_name[name] = merged
             return
         existing["sources"].add(source)
+        if not existing["route"]:
+            existing["route"] = record["route"]
         existing["vision"] = existing["vision"] or record["vision"]
         existing["video"] = existing["video"] or record["video"]
         existing["compaction"] = existing["compaction"] or record["compaction"]
@@ -311,32 +313,7 @@ def fetch_free_models(permanent_only=True):
                     target[key] = value
             existing["extra"] = target
 
-    for rec in portal.get("freeRecommendedModels") or []:
-        slug = rec.get("modelName")
-        if not slug:
-            continue
-        catalog_hit = by_id.get(slug, {})
-        add(
-            {
-                "name": slug,
-                "context": catalog_hit.get("context") or rec.get("contextLength"),
-                "inputs": catalog_hit.get("inputs")
-                or ("text, image" if rec.get("isVisionModel") else "text"),
-                "vision": bool(rec.get("isVisionModel")) or catalog_hit.get("vision", False),
-                "video": catalog_hit.get("video", False),
-                "compaction": bool(rec.get("isCompactionModel")),
-                "output": catalog_hit.get("output"),
-                "created": catalog_hit.get("created"),
-                "extra": catalog_hit.get("extra"),
-            },
-            "portal",
-        )
-
-    for key in ("freeRecommendedVisionModel", "freeRecommendedCompactionModel"):
-        rec = portal.get(key)
-        if not rec or not rec.get("modelName"):
-            continue
-        catalog_hit = by_id.get(rec["modelName"], {})
+    def add_portal(rec, catalog_hit):
         add(
             {
                 "name": rec["modelName"],
@@ -349,9 +326,21 @@ def fetch_free_models(permanent_only=True):
                 "output": catalog_hit.get("output"),
                 "created": catalog_hit.get("created"),
                 "extra": catalog_hit.get("extra"),
+                # The portal's own routing field: "local" (Nous) or "openrouter".
+                "route": rec.get("source") or "",
             },
             "portal",
         )
+
+    for rec in portal.get("freeRecommendedModels") or []:
+        slug = rec.get("modelName")
+        if slug:
+            add_portal(rec, by_id.get(slug, {}))
+
+    for key in ("freeRecommendedVisionModel", "freeRecommendedCompactionModel"):
+        rec = portal.get(key)
+        if rec and rec.get("modelName"):
+            add_portal(rec, by_id.get(rec["modelName"], {}))
 
     for slug, row in sorted(by_id.items()):
         if slug not in by_name:
@@ -381,6 +370,8 @@ def fetch_free_models(permanent_only=True):
                 row["name"] = model.get("id")
                 row["compaction"] = False
                 row["source"] = "openrouter"
+                # These came from OpenRouter's own models endpoint.
+                row["route"] = "openrouter"
                 extra = dict(row.get("extra") or {})
                 extra["or_slug"] = model.get("id")
                 row["extra"] = extra

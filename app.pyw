@@ -20,25 +20,17 @@ APP_NAME = "HFMM-beta"
 
 FONT = "Segoe UI"
 SZ_TITLE = 20
-SZ_BODY = 13
 SZ_TREE = 14
 SZ_HEAD = 13
 
 COLS = ("Model", "Context", "Inputs", "Output", "Released", "Flags", "Source")
 WIDTHS = {"Model": 360, "Context": 110, "Inputs": 160, "Output": 110,
           "Released": 110, "Flags": 200, "Source": 120}
-CFG_COLS = ("Role", "Model", "Status", "Notes", "Temp", "Last error", "Fallback", "Calls")
-CFG_WIDTHS = {
-    "Role": 130, "Model": 200, "Status": 74, "Notes": 160,
-    "Temp": 150, "Last error": 205, "Fallback": 340, "Calls": 56,
-}
-# Columns size themselves to their content (plus CFG_PAD of slack), so a wide
-# window gives snug one-line cells and a narrow one scales them down and wraps.
-CFG_PAD = 16
-CFG_MIN = {"Role": 58, "Model": 104, "Status": 50, "Notes": 64,
-           "Temp": 60, "Last error": 78, "Fallback": 96, "Calls": 36}
-CFG_MAX = {"Role": 210, "Model": 380, "Status": 92, "Notes": 280,
-           "Temp": 190, "Last error": 280, "Fallback": 400, "Calls": 90}
+CFG_COLS = ("Role", "Model", "Status", "Last error", "Calls")
+CFG_WIDTHS = {"Role": 130, "Model": 250, "Status": 250, "Last error": 300, "Calls": 50}
+# Per-column ceilings for the content-sized fit: the error cell carries a date,
+# a label and a retry delay, so it needs room the free tab's columns do not.
+CFG_CAPS = {"Role": 200, "Model": 380, "Status": 340, "Last error": 420, "Calls": 90}
 
 SZ_INFO = 14
 SZ_POPUP = 14        # Additional info popup body
@@ -94,8 +86,7 @@ class App(tk.Tk):
         self.usage_data = {"counts": {}, "fallbacks": [], "last": None}
         self.trouble_data = {}
         self.limits_data = {}
-        self._cfg_raw = {}
-        self._refit_after_id = None
+        self._scroll_sync_after_id = None
         self.palette = dict(theme.FALLBACK_PALETTE)
         self.meta = {}
         self.catalog_meta = {}
@@ -131,8 +122,6 @@ class App(tk.Tk):
         self.after(200, self.refresh)
         self._apply_timers()
         self._schedule_poll()
-        self._scroll_sync_after_id = None
-        self.after(1000, self._scroll_sync_tick)
 
     # ---------- window geometry ----------
 
@@ -199,8 +188,8 @@ class App(tk.Tk):
             "Treeview.Heading", background=p["head_bg"], foreground=p["head_fg"],
             relief="flat", font=("Segoe UI Semibold", SZ_HEAD), padding=(8, 6),
         )
-        # The config table wraps its cells, so it carries its own rowheight
-        # (recomputed from the content) and must not touch the free tab's.
+        # The config table carries its own style so its single-line rows and
+        # tag colours never leak into the free tab's Treeview.
         style.configure(
             "Cfg.Treeview", background=p["card"], foreground=p["fg"],
             fieldbackground=p["card"], borderwidth=0, rowheight=38,
@@ -253,13 +242,7 @@ class App(tk.Tk):
             self._insert(model)
         self._render_config(self.cfg_rows, self.usage_data,
                             self.trouble_data, self.limits_data)
-        if hasattr(self, "tree2") and hasattr(self.tree2, "winfo_exists"):
-            try:
-                self._fit_config()
-            except tk.TclError:
-                pass
-        if hasattr(self, "tree") and hasattr(self.tree_hscroll, "winfo_exists"):
-            self._autofit_columns(self.tree, self.tree_hscroll, self.tree_vscroll)
+        self._autofit_columns(self.tree, self.tree_hscroll, self.tree_vscroll)
 
     def _sync_combo(self):
         label = "Auto (follow Hermes)"
@@ -311,22 +294,23 @@ class App(tk.Tk):
         for widget in list(self.winfo_children()):
             widget.destroy()
         self._build_toolbar()
-        self._build_notebook()
-        # The footer packs from the bottom up so it always reserves its space;
-        # packed after the notebook at the default side, the notebook's request
-        # could claim the whole window and overlap these lines on short ones.
+        # Footer BEFORE the notebook. The packer serves slaves in pack order, so
+        # packing the notebook first let its `expand` request take the whole
+        # window and push these lines off the bottom edge (the Additional info
+        # button ended up at y=0, unmapped, on any window under ~700 px).
         self._build_status()
         self._build_usage_bar()
         self._build_limits_bar()
         self._build_info_bar()
+        self._build_notebook()
 
     def _build_toolbar(self):
         p = self.palette
         bar = tk.Frame(self, bg=p["bg"])
         bar.pack(fill="x", padx=14, pady=(14, 4))
-        # Row 0: title + buttons. The title is the only stretchable column, so a
-        # narrow window clips the title instead of pushing buttons off the bar.
-        # Row 1: the status line gets the full width.
+        # The title is the only stretchable column, so a narrow window clips it
+        # rather than pushing the buttons off the bar; row 1 (the info line)
+        # spans all five columns.
         bar.columnconfigure(0, weight=1)
 
         tk.Label(bar, text=APP_NAME, bg=p["bg"], fg=p["fg"],
@@ -367,7 +351,9 @@ class App(tk.Tk):
         bar.pack(side="bottom", fill="x", padx=14, pady=(2, 0))
         self.info_btn = ttk.Button(bar, text="Additional info",
                                    command=self.open_model_info)
-        self.info_btn.pack(side="right")
+        # Left side: the popup is right-justified to the window edge, so a
+        # right-packed button sat underneath it.
+        self.info_btn.pack(side="left")
         self.info_btn.state(["disabled"])
 
     def _build_usage_bar(self):
@@ -396,20 +382,18 @@ class App(tk.Tk):
         for col in COLS:
             self.tree.heading(col, text=col, anchor="w")
             self.tree.column(col, width=WIDTHS[col], anchor="w")
-        self.tree.pack(side="left", fill="both", expand=True)
-        self.tree.bind("<Double-1>", lambda _e: self.copy_selected())
-        self.tree.bind("<Button-3>", self._on_free_rclick)
-
+        # Scrollbars pack before the tree: the packer serves slaves in order, so
+        # a tree packed first with `expand` takes the whole panel and leaves the
+        # scrollbars with no strip to occupy.
         self.tree_vscroll = ttk.Scrollbar(wrap, orient="vertical", command=self.tree.yview)
         self.tree_vscroll.pack(side="right", fill="y")
         self.tree_hscroll = ttk.Scrollbar(wrap, orient="horizontal", command=self.tree.xview)
         self.tree_hscroll.pack(side="bottom", fill="x")
+        self.tree.pack(side="left", fill="both", expand=True)
+        self.tree.bind("<Double-1>", lambda _e: self.copy_selected())
+        self.tree.bind("<Button-3>", self._on_free_rclick)
         self.tree.configure(yscrollcommand=self.tree_vscroll.set, xscrollcommand=self.tree_hscroll.set)
-        self.tree.bind(
-            "<Configure>",
-            lambda _e: self._sync_vscroll(self.tree, self.tree_vscroll),
-            add="+",
-        )
+        self.tree.bind("<Configure>", self._on_tree_configure, add="+")
 
     def _build_config_tab(self, parent):
         p = self.palette
@@ -424,6 +408,12 @@ class App(tk.Tk):
         for col in CFG_COLS:
             self.tree2.heading(col, text=col, anchor="w")
             self.tree2.column(col, width=CFG_WIDTHS[col], anchor="w")
+        # Scrollbars before the tree, for the same pack-order reason as the
+        # free tab.
+        self.tree2_vscroll = ttk.Scrollbar(inner, orient="vertical", command=self.tree2.yview)
+        self.tree2_vscroll.pack(side="right", fill="y")
+        self.tree2_hscroll = ttk.Scrollbar(inner, orient="horizontal", command=self.tree2.xview)
+        self.tree2_hscroll.pack(side="bottom", fill="x")
         self.tree2.pack(side="left", fill="both", expand=True)
         self.tree2.bind("<Double-1>", lambda _e: self.copy_row(self.tree2))
         self.tree2.bind("<Button-1>", self._on_cfg_press)
@@ -435,6 +425,9 @@ class App(tk.Tk):
         self.tree2.tag_configure("free", foreground=p["ok"])
         self.tree2.tag_configure("paid", foreground=p["warn"])
         self.tree2.tag_configure("missing", foreground=p["error"])
+        # A preview/alpha/beta slot is amber across the row: ttk colours a whole
+        # item, not one cell, and the status stays readable as text.
+        self.tree2.tag_configure("temp", foreground=p["warn"])
         self.tree2.tag_configure("dragging", background=p["accent"], foreground=p["fg"])
 
         self.tree2_vscroll = ttk.Scrollbar(inner, orient="vertical", command=self.tree2.yview)
@@ -442,11 +435,7 @@ class App(tk.Tk):
         self.tree2_hscroll = ttk.Scrollbar(inner, orient="horizontal", command=self.tree2.xview)
         self.tree2_hscroll.pack(side="bottom", fill="x")
         self.tree2.configure(yscrollcommand=self.tree2_vscroll.set, xscrollcommand=self.tree2_hscroll.set)
-        self.tree2.bind(
-            "<Configure>",
-            lambda _e: (self._schedule_refit(), self._sync_vscroll(self.tree2, self.tree2_vscroll)),
-            add="+",
-        )
+        self.tree2.bind("<Configure>", self._on_tree_configure, add="+")
 
     def _build_status(self):
         self.status = tk.Label(
@@ -465,7 +454,9 @@ class App(tk.Tk):
             parts.append(f"catalog updated {self.last_models}")
         if hasattr(self, "last_deep"):
             parts.append(f"Hermes config checked {self.last_deep}")
-        self.status.configure(text="   ·   ".join(parts) or "Connecting…")
+        # Also drop the colour a flash set, or a green "copied" line sticks.
+        self.status.configure(text="   ·   ".join(parts) or "Connecting…",
+                              fg=self._c("dim"))
 
     def _flash_status(self, message, ms=2600):
         if not hasattr(self, "status"):
@@ -582,9 +573,7 @@ class App(tk.Tk):
                      ("Flags", values[5]), ("Source", values[6])]
             return values[0], info, facts
         facts = [("Role", _plain(values[0])), ("Status", _plain(values[2])),
-                 ("Notes", _plain(values[3])), ("Temp", _plain(values[4])),
-                 ("Last error", _plain(values[5])), ("Fallback", _plain(values[6])),
-                 ("Calls", _plain(values[7]))]
+                 ("Last error", _plain(values[3])), ("Calls", _plain(values[4]))]
         return _plain(values[1]), self._model_info(_plain(values[1])), facts
 
     @staticmethod
@@ -597,6 +586,57 @@ class App(tk.Tk):
             return f"https://openrouter.ai/{extra['or_slug']}", "OpenRouter"
         return "https://portal.nousresearch.com/models", "Nous Portal"
 
+    def _popup_sections(self, on_free, slug, info, facts):
+        """[(label, value, palette key)] for the popup's labelled sections.
+
+        The config tab keeps only the verdict and the error on the table, so
+        everything it dropped lands here — lifecycle, failover, provider.
+        """
+        fact_map = dict(facts)
+        if on_free:
+            return [
+                ("Context", fact_map.get("Context", "-"), "fg"),
+                ("Inputs", fact_map.get("Inputs", "-"), "fg"),
+                ("Output", fact_map.get("Output", "-"), "fg"),
+                ("Released", fact_map.get("Released", "-"), "fg"),
+                ("Source", fact_map.get("Source", "-"), "fg"),
+            ]
+        status = fact_map.get("Status", "")
+        temp = self._temp_text(info)
+        row = next((m for m in self.models if m.get("name") == slug), None)
+        src = row or info or {}
+        route = src.get("route") or (info or {}).get("route")
+        return [
+            ("Verdict", status or "None",
+             "ok" if "FREE" in status else "warn" if "PAID" in status else "error"),
+            ("Lifecycle", temp if temp != "-" else "None",
+             "warn" if info.get("temp") else "fg"),
+            ("Failover", self._fallback_text(slug, self.trouble_data), "accent"),
+            ("Recent calls", fact_map.get("Calls", "None"), "fg"),
+            ("Source", src.get("source") or "None", "fg"),
+            ("Provider", hermes_state.provider_for_route(route) or "None", "fg"),
+        ]
+
+    def _section_grid(self, parent, sections, width):
+        """Label-above-value sections in three columns, like the mockup."""
+        per_row = 3
+        cell_w = max((width - 44 - 2 * 14) // per_row, 120)
+        p = self.palette
+        grid = tk.Frame(parent, bg=p["bg"])
+        grid.pack(fill="x", pady=(10, 0))
+        for col in range(per_row):
+            grid.columnconfigure(col, weight=1, uniform="sec")
+        for index, (label, value, color_key) in enumerate(sections):
+            row, col = divmod(index, per_row)
+            cell = tk.Frame(grid, bg=p["bg"])
+            cell.grid(row=row, column=col, sticky="nw", padx=(0, 14), pady=(0, 8))
+            tk.Label(cell, text=label.upper(), bg=p["bg"], fg=p["dim"],
+                     font=("Segoe UI Semibold", SZ_POPUP_META - 2),
+                     anchor="w").pack(anchor="w")
+            tk.Label(cell, text=value, bg=p["bg"], fg=p[color_key],
+                     font=(FONT, SZ_POPUP - 1), anchor="w", justify="left",
+                     wraplength=cell_w).pack(anchor="w")
+
     def open_model_info(self):
         """Popup sheet for the selected row — everything the panel used to squeeze in."""
         self._close_popups()
@@ -607,10 +647,6 @@ class App(tk.Tk):
         title, info, facts = picked
         on_free = self.nb.index(self.nb.select()) == 0
         chips, body, scores = self._model_detail(info, lifecycle=on_free)
-        if not on_free:
-            status = next((v for k, v in facts if k == "Status"), "")
-            if status:
-                chips = f"status {status.lower()}   ·   {chips}"
 
         win = tk.Toplevel(self)
         win.title(f"Additional info — {title}")
@@ -619,19 +655,17 @@ class App(tk.Tk):
         win.transient(self)
         self._info_win = win
 
-        width = max(min(self.winfo_width() - 48, 700), 460)
+        width = max(min(self.winfo_width() - 48, 760), 520)
         wrap = width - 44
 
         head = tk.Frame(win, bg=p["bg"])
         head.pack(fill="x", padx=22, pady=(16, 4))
-        tk.Label(head, text=title, bg=p["bg"], fg=p["fg"],
-                 font=("Segoe UI Semibold", SZ_POPUP + 3), anchor="w", justify="left",
+        tk.Label(head, text=f"Additional info — {title}", bg=p["bg"], fg=p["fg"],
+                 font=("Segoe UI Semibold", SZ_POPUP + 1), anchor="w", justify="left",
                  wraplength=wrap).pack(fill="x")
-        tk.Label(head, text="   ·   ".join(f"{k} {v}" for k, v in facts),
-                 bg=p["bg"], fg=p["dim"], font=(FONT, SZ_POPUP_META), anchor="w",
-                 justify="left", wraplength=wrap).pack(fill="x", pady=(3, 0))
+        self._section_grid(head, self._popup_sections(on_free, title, info, facts), width)
         tk.Label(head, text=chips, bg=p["bg"], fg=p["accent"], font=(FONT, SZ_POPUP_META),
-                 anchor="w", justify="left", wraplength=wrap).pack(fill="x", pady=(3, 0))
+                 anchor="w", justify="left", wraplength=wrap).pack(fill="x", pady=(2, 0))
         url, host = self._source_url(info)
         link = tk.Label(head, text=f"Full description on {host} →",
                         bg=p["bg"], fg=p["accent"], cursor="hand2", anchor="w",
@@ -640,11 +674,20 @@ class App(tk.Tk):
         link.pack(fill="x", pady=(4, 0))
         link.bind("<Button-1>", lambda _e, u=url: webbrowser.open(u))
 
+        # Close packs BEFORE the scrollable body. The packer serves slaves in
+        # order, so a button packed after an `expand` slave is served last: once
+        # the window is shorter than its content it gets squeezed to zero, which
+        # is exactly how the button disappeared.
+        foot = tk.Frame(win, bg=p["bg"])
+        foot.pack(side="bottom", fill="x", padx=22, pady=(8, 14))
+        close_btn = ttk.Button(foot, text="Close", command=win.destroy)
+        close_btn.pack(side="right")
+
         box = tk.Frame(win, bg=p["border"])
         box.pack(fill="both", expand=True, padx=22)
         inner = tk.Frame(box, bg=p["card"])
         inner.pack(fill="both", expand=True)
-        text = tk.Text(inner, height=14, bg=p["card"], fg=p["fg"], font=(FONT, SZ_POPUP),
+        text = tk.Text(inner, height=12, bg=p["card"], fg=p["fg"], font=(FONT, SZ_POPUP),
                        relief="flat", wrap="word", padx=10, pady=8)
         text.pack(side="left", fill="both", expand=True)
         sb = ttk.Scrollbar(inner, orient="vertical", command=text.yview)
@@ -655,16 +698,23 @@ class App(tk.Tk):
             text.insert("end", "\n" + scores + "\n")
         text.configure(state="disabled")
 
-        ttk.Button(win, text="Close", command=win.destroy).pack(pady=(10, 14))
         win.bind("<Escape>", lambda _e: win.destroy())
         win.bind("<Destroy>", lambda _e: setattr(self, "_info_win", None))
 
         win.update_idletasks()
-        panel_h = max(self.nb.winfo_height() - 6, 200)
+        screen_cap = self.winfo_screenheight() - 100
         width = min(width, self.winfo_screenwidth() - 20)
-        height = min(max(win.winfo_reqheight(), 200), panel_h)
+        # Size to the content, but never so short that the header squeezes the
+        # description into unreadability (it scrolls instead), and never taller
+        # than the screen. The window is fixed-size, so this is the whole
+        # contract: everything below the header lives in the scrolling area.
+        # Fixed-size window: size it to the content, capped so the header plus a
+        # readable slice of description plus Close fit — the rest scrolls.
+        height = min(max(win.winfo_reqheight(), head.winfo_reqheight() + 200),
+                     head.winfo_reqheight() + 260, screen_cap)
         x = self.winfo_rootx() + self.winfo_width() - width
         y = self.winfo_rooty() + max((self.winfo_height() - height) // 2, 0)
+        y = max(min(y, self.winfo_screenheight() - height - 8), 8)
         win.geometry(f"{width}x{height}+{x}+{y}")
 
     def _open_doc(self, filename):
@@ -676,27 +726,19 @@ class App(tk.Tk):
 
     # ---------- column fitting ----------
 
-    def _autofit_columns(self, tree, hscroll, vscroll=None):
-        font = getattr(self, "_measure_font", None) or tkfont.Font(family=FONT, size=SZ_TREE)
-        cols = tree["columns"]
-        items = tree.get_children()
-        total = 0
-        for index, col in enumerate(cols):
+    def _autofit_columns(self, tree, hscroll, vscroll=None, caps=None):
+        """Size each column to its own widest cell; scroll rather than wrap."""
+        font = self._measure_font
+        for index, col in enumerate(tree["columns"]):
             width = font.measure(str(tree.heading(col)["text"])) + 24
-            for item in items:
+            for item in tree.get_children():
                 values = tree.item(item)["values"]
                 if index < len(values):
                     width = max(width, font.measure(str(values[index])) + 24)
-            cap = 460 if col in ("Model", "Detail") else 300
-            width = min(max(width, 64), cap)
-            tree.column(col, width=width, stretch=False)
-            total += width
+            cap = (caps or {}).get(col, 460 if col == "Model" else 300)
+            tree.column(col, width=min(max(width, 64), cap), stretch=False)
         tree.update_idletasks()
-        viewport = tree.winfo_width() - 4
-        if viewport > 1 and total <= viewport:
-            hscroll.pack_forget()
-        else:
-            hscroll.pack(side="bottom", fill="x")
+        self._sync_hscroll(tree, hscroll)
         if vscroll is not None:
             self._sync_vscroll(tree, vscroll)
 
@@ -714,38 +756,62 @@ class App(tk.Tk):
         if need == bool(vscroll.winfo_ismapped()):
             return
         if need:
-            vscroll.pack(side="right", fill="y")
+            vscroll.pack(side="right", fill="y", before=tree)
         else:
             vscroll.pack_forget()
 
+    def _on_tree_configure(self, event):
+        """Scrollbars follow the panel; re-checked once layout has settled."""
+        if event.widget is self.tree2:
+            self._sync_vscroll(self.tree2, self.tree2_vscroll)
+            self._sync_hscroll(self.tree2, self.tree2_hscroll)
+        else:
+            self._sync_vscroll(self.tree, self.tree_vscroll)
+            self._sync_hscroll(self.tree, self.tree_hscroll)
+        self._schedule_scroll_sync()
+
+    def _schedule_scroll_sync(self):
+        """Re-run the scrollbar check after the resize has settled.
+
+        `<Configure>` can arrive while the tree still reports its previous
+        width, which leaves the horizontal scrollbar showing the old answer.
+        """
+        if self._scroll_sync_after_id:
+            self.after_cancel(self._scroll_sync_after_id)
+        self._scroll_sync_after_id = self.after(120, self._scroll_sync)
+
+    def _scroll_sync(self):
+        self._scroll_sync_after_id = None
+        try:
+            for tree, hs, vs in ((self.tree, self.tree_hscroll, self.tree_vscroll),
+                                 (self.tree2, self.tree2_hscroll, self.tree2_vscroll)):
+                self._sync_vscroll(tree, vs)
+                self._sync_hscroll(tree, hs)
+        except tk.TclError:
+            pass
+
     def _sync_hscroll(self, tree, hscroll):
+        """Show the horizontal scrollbar only when the columns overflow."""
         if tree is None or hscroll is None:
             return
         try:
-            if not tree.winfo_exists() or not tree.winfo_ismapped():
+            if not tree.winfo_exists():
                 return
         except Exception:
             return
-        total = sum(tree.column(col, "width") for col in tree["columns"])
         viewport = tree.winfo_width() - 4
-        need = viewport <= 1 or total > viewport
+        if viewport <= 1:
+            return  # not laid out yet; <Configure> re-syncs
+        need = sum(tree.column(col, "width") for col in tree["columns"]) > viewport
         if need == bool(hscroll.winfo_ismapped()):
             return
         if need:
-            hscroll.pack(side="bottom", fill="x")
+            # `before` keeps the scrollbar ahead of the tree in pack order; when
+            # the tree is served first its `expand` takes the whole panel and
+            # the re-packed scrollbar gets no strip at all.
+            hscroll.pack(side="bottom", fill="x", before=tree)
         else:
             hscroll.pack_forget()
-
-    def _scroll_sync_tick(self):
-        """Keep scrollbars visible only while they are actually needed."""
-        pairs = (
-            (getattr(self, "tree", None), getattr(self, "tree_vscroll", None), getattr(self, "tree_hscroll", None)),
-            (getattr(self, "tree2", None), getattr(self, "tree2_vscroll", None), getattr(self, "tree2_hscroll", None)),
-        )
-        for tree, vscroll, hscroll in pairs:
-            self._sync_vscroll(tree, vscroll)
-            self._sync_hscroll(tree, hscroll)
-        self._scroll_sync_after_id = self.after(2000, self._scroll_sync_tick)
 
     # ---------- empty states / bubbles ----------
 
@@ -802,7 +868,6 @@ class App(tk.Tk):
             usage = None
             fb_entries = []
             trouble = {}
-            limits = {}
             if models:
                 try:
                     models_out, meta_out = nous_core.fetch_free_models()
@@ -823,12 +888,17 @@ class App(tk.Tk):
                     trouble = hermes_state.troubleshooting()
                 except Exception:
                     trouble = {}
+            # Paint first, then spend the slow network calls on the limits line.
+            # The rate-limit probe is a live completion (~4 s) and the
+            # OpenRouter pool another request; neither should hold the panels.
+            self.after(0, lambda: self._show(
+                models_out, meta_out, cfg_rows, usage, fb_entries, trouble))
+            if deep:
                 try:
                     limits = self._probe_limits(cfg_rows)
                 except Exception:
                     limits = {}
-            self.after(0, lambda: self._show(
-                models_out, meta_out, cfg_rows, usage, fb_entries, trouble, limits))
+                self.after(0, lambda: self._render_limits(limits))
 
         threading.Thread(target=work, daemon=True).start()
 
@@ -881,25 +951,36 @@ class App(tk.Tk):
         return "-"
 
     @staticmethod
+    def _stamp_text(stamp):
+        """`2026-11-16 18:24:38` -> `11/16/2026`; '' when unreadable."""
+        match = re.match(r"^(\d{4})-(\d{2})-(\d{2})[ T]\d{2}:\d{2}", str(stamp or ""))
+        return f"{match.group(2)}/{match.group(3)}/{match.group(1)}" if match else ""
+
+    @staticmethod
     def _last_error_text(slug, trouble):
-        """`429 rate limit ×43 · retry 2s` — the delay only when it's a 429."""
+        """`11/16/2026 · 429 rate limit ×43 · retry 2s`, or `No error`.
+
+        Newest first, American date, and the delay last: the when is what makes
+        a bare `404 gone ×3` mean something.
+        """
         rec = (trouble or {}).get("errors", {}).get(slug)
         if not rec:
-            return "-"
+            return "No error"
+        stamp = App._stamp_text(rec.get("last"))
         text = f"{rec.get('label', 'error')} ×{rec.get('count', 1)}"
         if rec.get("label", "").startswith("429"):
             asked = (trouble or {}).get("retry", {}).get(slug)
             wait = hermes_state._duration(asked)
             if wait:
                 text += f" · retry {wait}"
-        return text
+        return f"{stamp} · {text}" if stamp else text
 
     @staticmethod
     def _fallback_text(slug, trouble):
         """`→ stepfun/step-3.7-flash:free ×3` (failed over to) / `← …` (caught one)."""
         rec = (trouble or {}).get("fallbacks", {}).get(slug)
         if not rec:
-            return "-"
+            return "None"
         return f"{rec['dir']} {rec['other']} ×{rec['count']}"
 
     @staticmethod
@@ -975,34 +1056,29 @@ class App(tk.Tk):
         )
 
     def _render_config(self, rows, usage, trouble=None, limits=None):
+        trouble = trouble or {}
         self.cfg_rows = rows
         self.usage_data = usage
-        self.trouble_data = trouble or {}
+        self.trouble_data = trouble
         self.limits_data = limits or {}
         if not hasattr(self, "tree2"):
             return
-        trouble = trouble or {}
         self.tree2.delete(*self.tree2.get_children())
-        self._cfg_raw = {}
         free_names = {m["name"] for m in self.models}
         catalog_ids = set(self.catalog_meta.get("catalog_ids", []))
         for row in rows:
             status, detail = self._classify(row["model"], free_names, catalog_ids)
             info = self._model_info(row["model"])
             slug = row["model"]
+            tags = [status]
+            if info.get("temp"):
+                tags.append("temp")
             values = (
-                row["role"], slug, status.upper(), detail,
-                self._temp_text(info),
+                row["role"], slug, f"{status.upper()} · {detail}",
                 self._last_error_text(slug, trouble),
-                self._fallback_text(slug, trouble),
                 self._calls_text(slug, trouble),
             )
-            item = self.tree2.insert(
-                "", "end",
-                values=tuple(self._wrap_row(values)),
-                tags=(status,),
-            )
-            self._cfg_raw[item] = list(values)
+            self.tree2.insert("", "end", values=values, tags=tuple(tags))
 
         # Fallback rows only: remember which tree row is which fallback_providers slot
         # so they can be dragged into a new order and removed by right-click.
@@ -1038,58 +1114,13 @@ class App(tk.Tk):
                 ["Nothing returned for model.default, auxiliary pins, or fallbacks.",
                  "Tip: anything pinned here is classified FREE / PAID / MISSING."],
             )
-        self._fit_config()
-
-    def _schedule_refit(self, _event=None):
-        """Re-fit on resize, debounced: the wrap has to follow the window."""
-        if self._refit_after_id:
-            self.after_cancel(self._refit_after_id)
-        self._refit_after_id = self.after(120, self._fit_config)
-
-    def _fit_config(self):
-        """Size the config columns to the panel and re-wrap to fit.
-
-        Natural width = the widest cell (plus CFG_PAD of slack). A wide window
-        therefore gets snug, mostly one-line columns; a narrow one scales them
-        down to the panel and wraps instead of scrolling.
-        """
-        if not hasattr(self, "tree2") or not self._cfg_raw:
-            return
-        avail = self.tree2.winfo_width() - 4
-        if avail < 200:
-            return
-        font = self._measure_font
-        natural = {}
-        for index, col in enumerate(CFG_COLS):
-            width = font.measure(str(self.tree2.heading(col)["text"])) + CFG_PAD
-            for raw in self._cfg_raw.values():
-                if index < len(raw):
-                    width = max(width, font.measure(str(raw[index])) + CFG_PAD)
-            natural[col] = min(width, CFG_MAX[col])
-        total = sum(natural.values())
-        if total > avail:
-            scale = avail / total
-            widths = {c: max(CFG_MIN[c], int(natural[c] * scale)) for c in CFG_COLS}
-        else:
-            widths = natural
-        for col, width in widths.items():
-            self.tree2.column(col, width=width, stretch=False)
-        self._rewrap()
-        self._apply_row_height()
-        self._sync_hscroll(self.tree2, self.tree2_hscroll)
-        self._sync_vscroll(self.tree2, self.tree2_vscroll)
-
-    def _rewrap(self):
-        for item, raw in self._cfg_raw.items():
-            try:
-                self.tree2.item(item, values=tuple(self._wrap_row(raw)))
-            except tk.TclError:
-                pass
+        self._autofit_columns(self.tree2, self.tree2_hscroll, self.tree2_vscroll,
+                              caps=CFG_CAPS)
 
     def _render_limits(self, limits):
         """The account's live ceilings: Nous fair-share bucket + OpenRouter pool."""
-        if not hasattr(self, "limits"):
-            return
+        if not hasattr(self, "limits") or limits is None:
+            return  # not fetched yet on this pass; keep the previous reading
         parts = []
         probe = (limits or {}).get("probe") or {}
         if probe.get("remaining") is not None and probe.get("limit"):
@@ -1105,77 +1136,6 @@ class App(tk.Tk):
             )
         self.limits.configure(text="   ·   ".join(parts) or "Free-tier limits unknown — hit Refresh")
 
-    def _wrap_text(self, text, font, width):
-        """Insert newlines so a narrow column wraps instead of clipping.
-
-        ttk's treeview draws one line per cell unless the value carries `\\n`,
-        and its rows are a single height for the whole table — so the wrapping
-        is done here, and `_apply_row_height` grows the rows to fit.
-
-        Words longer than the column are broken after `/` and `-` (slugs are
-        full of both) so a model id wraps instead of spilling past the edge.
-        """
-        text = str(text)
-        if not text or width <= 20:
-            return text
-        pieces = []                      # [chunk, needs a space before it]
-        for word in text.split():
-            is_first_word = not pieces
-            buf = ""
-            first_chunk = True
-            for char in word:
-                buf += char
-                if char in "/-":
-                    pieces.append([buf, first_chunk and not is_first_word])
-                    first_chunk = False
-                    buf = ""
-            if buf:
-                pieces.append([buf, first_chunk and not is_first_word])
-        lines = []
-        current = ""
-        for chunk, space_before in pieces:
-            candidate = chunk if not current else current + (" " if space_before else "") + chunk
-            if not current or font.measure(candidate) <= width:
-                current = candidate
-            else:
-                lines.append(current)
-                current = chunk
-        if current:
-            lines.append(current)
-        return "\n".join(lines)
-
-    def _wrap_row(self, values):
-        font = self._measure_font
-        out = []
-        for index, text in enumerate(values):
-            width = self.tree2.column(CFG_COLS[index], "width") - CFG_PAD
-            out.append(self._wrap_text(text, font, width))
-        return out
-
-    def _apply_row_height(self):
-        """Grow the config rows to fit their wrapped cells (capped, so one long
-        row cannot eat the panel). ttk rows are uniform, so the tallest wins."""
-        if not hasattr(self, "tree2"):
-            return
-        lines = 1
-        for item in self.tree2.get_children():
-            for value in self.tree2.item(item)["values"]:
-                lines = max(lines, str(value).count("\n") + 1)
-        lines = min(lines, 3)
-        self._cfg_style.configure(
-            "Cfg.Treeview",
-            rowheight=lines * self._measure_font.metrics("linespace") + 12,
-        )
-
-    def _sync_hscroll(self, tree, hscroll):
-        total = sum(tree.column(col, "width") for col in tree["columns"])
-        tree.update_idletasks()
-        viewport = tree.winfo_width() - 4
-        if viewport > 1 and total <= viewport:
-            hscroll.pack_forget()
-        else:
-            hscroll.pack(side="bottom", fill="x")
-
     def _show(self, models, meta, cfg_rows, usage, fb_entries=None, trouble=None, limits=None):
         self._busy = False
         if fb_entries is not None:
@@ -1183,7 +1143,6 @@ class App(tk.Tk):
         stamp = datetime.datetime.now().strftime("%H:%M")
         if models is not None:
             self.models = models
-            self.meta = meta
             self.catalog_meta = meta
             self.catalog_lookup = (meta or {}).get("catalog_lookup", {})
             if hasattr(self, "tree"):
@@ -1250,7 +1209,7 @@ class App(tk.Tk):
         if not sel:
             return
         values = tree.item(sel[0])["values"]
-        self.selected_slug = values[0] if tree is self.tree else _plain(values[1])
+        self.selected_slug = values[0] if tree is self.tree else _plain(values[1]).replace(" ", "")
         if self.set_main_btn is not None:
             self.set_main_btn.state(["!disabled"])
         if getattr(self, "info_btn", None) is not None:
@@ -1292,25 +1251,21 @@ class App(tk.Tk):
             messagebox.showerror("Set main model failed", (proc.stderr or proc.stdout or "unknown error").strip())
             self._flash_status("Set main model failed")
 
-    def copy_selected(self):
-        tree = self.tree
-        if not tree.selection():
-            return
-        vals = tree.item(tree.selection()[0])["values"]
+    def _copy(self, text):
         self.clipboard_clear()
-        self.clipboard_append(vals[0])
+        self.clipboard_append(text)
         self.update()
-        self._flash_status("Copied: " + vals[0])
+        self._flash_status("Copied: " + text)
+
+    def copy_selected(self):
+        if not self.tree.selection():
+            return
+        self._copy(self.tree.item(self.tree.selection()[0])["values"][0])
 
     def copy_row(self, tree):
         if not tree.selection():
             return
-        vals = tree.item(tree.selection()[0])["values"]
-        slug = _plain(vals[1])
-        self.clipboard_clear()
-        self.clipboard_append(slug)
-        self.update()
-        self._flash_status("Copied: " + slug)
+        self._copy(_plain(tree.item(tree.selection()[0])["values"][1]))
 
     # ---------- fallback chain editing ----------
 
@@ -1360,8 +1315,31 @@ class App(tk.Tk):
         menu.grab_release()
 
     def _provider_for(self, slug):
-        """Provider for a new fallback entry; OpenRouter rows will supply their own."""
-        return "nous"
+        """Provider for a new fallback, read off the model's own API route.
+
+        The portal reports `source` per model and the OpenRouter models endpoint
+        is OpenRouter by definition, so this is data rather than an assumption
+        that everything is Nous.
+        """
+        row = next((m for m in self.models if m.get("name") == slug), None)
+        provider = hermes_state.provider_for_route((row or {}).get("route"))
+        if provider is None:
+            self._flash_status(f"Cannot tell which provider serves {slug} — hit Refresh")
+        return provider
+
+    def _fallback_entry(self, slug, base=None):
+        """A chain entry for `slug`, routed by the model's own API source.
+
+        `base` carries over a slot's extra keys when replacing; provider and
+        model always come from the route the API reported.
+        """
+        provider = self._provider_for(slug)
+        if provider is None:
+            return None
+        entry = dict(base or {})
+        entry["provider"] = provider
+        entry["model"] = slug
+        return entry
 
     def _add_fallback(self, slug, index):
         if self._fallback_busy:
@@ -1371,8 +1349,11 @@ class App(tk.Tk):
         except Exception as exc:  # noqa: BLE001
             self._fallback_failed(exc)
             return
+        entry = self._fallback_entry(slug)
+        if entry is None:
+            return
         pos = len(chain) if index is None else max(0, min(index, len(chain)))
-        chain.insert(pos, {"provider": self._provider_for(slug), "model": slug})
+        chain.insert(pos, entry)
         self._write_fallbacks(chain, f"Added {slug} as fallback #{pos + 1}")
 
     def _replace_fallback(self, slug, index):
@@ -1387,8 +1368,9 @@ class App(tk.Tk):
             self._flash_status("That fallback slot is gone — hit Refresh")
             return
         old = chain[index].get("model", "?")
-        entry = dict(chain[index])
-        entry["model"] = slug
+        entry = self._fallback_entry(slug, chain[index])
+        if entry is None:
+            return
         chain[index] = entry
         self._write_fallbacks(chain, f"Replaced fallback #{index + 1}: {old} → {slug}")
 
@@ -1472,38 +1454,34 @@ class App(tk.Tk):
         self._fb_rows.insert(insert_at, self._fb_rows.pop(rel_self))
 
     def _on_cfg_release(self, event=None):
-        drag = self._drag_fb
-        self._drag_fb = None
-        self.tree2.configure(cursor="")
-        if drag is None:
-            return
-        try:
-            self.tree2.item(drag["item"], tags=drag["tags"])
-        except tk.TclError:
-            pass
-        if not drag["active"]:
-            return
-        order = [self._fb_chain[item] for item in self._fb_rows]
-        if order == sorted(order):
+        drag = self._end_drag()
+        if drag is None or not drag["active"]:
             return
         try:
             chain = hermes_state.fallback_chain()
         except Exception as exc:  # noqa: BLE001
             self._fallback_failed(exc)
             return
-        new_chain = [chain[i] for i in order]
-        self._write_fallbacks(new_chain, "Reordered fallbacks")
+        order = [self._fb_chain[item] for item in self._fb_rows]
+        if order == sorted(order):
+            return
+        self._write_fallbacks([chain[i] for i in order], "Reordered fallbacks")
 
-    def _cancel_drag(self):
+    def _end_drag(self):
+        """Clear the drag state and put the row's cursor and tags back."""
         drag = self._drag_fb
         self._drag_fb = None
         self.tree2.configure(cursor="")
         if drag is None:
-            return
+            return None
         try:
             self.tree2.item(drag["item"], tags=drag["tags"])
         except tk.TclError:
             pass
+        return drag
+
+    def _cancel_drag(self):
+        self._end_drag()
 
     def _on_cfg_rclick(self, event):
         item = self.tree2.identify_row(event.y)
@@ -1512,7 +1490,7 @@ class App(tk.Tk):
         index = self._fb_chain[item]
         self.tree2.selection_set(item)
         self.tree2.focus_set()
-        self.selected_slug = _plain(self.tree2.item(item)["values"][1])
+        self.selected_slug = _plain(self.tree2.item(item)["values"][1]).replace(" ", "")
         menu = self._menu()
         menu.add_command(
             label=f"Remove fallback #{index + 1}",
