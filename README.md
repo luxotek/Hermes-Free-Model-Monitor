@@ -5,9 +5,11 @@ so you can set a reliable main model and fallback chain. A tiny desktop window
 (shortened **HFMM**, the "Hermes FMM companion app") that unions two live
 sources and keeps only the models worth building a long-term chain on:
 
-1. `GET portal.nousresearch.com/api/nous/recommended-models` (what the free tier may pick)
-2. `GET inference-api.nousresearch.com/v1/models` (any row where prompt + completion price is 0)
-3. `GET openrouter.ai/api/v1/models` (the `:free` models your key can actually call)
+1. the Portal's `/api/nous/recommended-models` (what the free tier may pick)
+2. the inference API's `/v1/models` (any row where prompt + completion price is 0)
+3. `openrouter.ai/api/v1/models` (its `:free` and `$0` rows)
+
+The first two hosts come from your Hermes login (`auth.json`), never assumed.
 
 Previews and anything with an expiration date are dropped from the free list; the
 config tab still flags them if you already have one pinned.
@@ -184,7 +186,7 @@ the path to Hermes's `.env`. The models stay listed either way.
 | File | Purpose |
 |---|---|
 | `app.pyw` | The tkinter window (tabs, Additional-info popup, toolbar, timers, Settings/About) |
-| `nous_core.py` | Auth lookup + the two API calls + union logic |
+| `nous_core.py` | Auth lookup + the Portal / inference / OpenRouter calls + union logic |
 | `hermes_state.py` | Reads Hermes config via `hermes config get`; parses `agent.log` usage |
 | `theme.py` | Skin engine + desktop preset palettes, override persistence |
 | `alerts.py` | Per-role transition detection + taskbar flash helper |

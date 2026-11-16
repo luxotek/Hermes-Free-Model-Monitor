@@ -9,7 +9,6 @@ __pycache__/
 # Machine-specific UI state
 theme_choice.json
 ui_state.json
-stealth_state.json
 
 # Build output
 build/

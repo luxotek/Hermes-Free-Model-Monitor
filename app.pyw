@@ -210,12 +210,7 @@ class App(tk.Tk):
             side="right", padx=(0, 8))
 
         win.bind("<Escape>", lambda _e: self._dismiss_hermes_gate())
-        win.update_idletasks()
-        w, h = win.winfo_reqwidth(), win.winfo_reqheight()
-        x = self.winfo_rootx() + max((self.winfo_width() - w) // 2, 0)
-        y = self.winfo_rooty() + max((self.winfo_height() - h) // 2, 0)
-        win.geometry(f"{w}x{h}+{x}+{y}")
-        win.lift()
+        self._place_window(win)
 
     def _retry_hermes(self):
         if not hermes_state.hermes_running():
@@ -296,6 +291,31 @@ class App(tk.Tk):
         except (RuntimeError, tk.TclError):
             self._closing = True
             return None
+
+    def _place_window(self, win, width=None, height=None, right=False):
+        """Put a fixed-size dialog over this window, clamped on-screen.
+
+        `right=True` right-justifies it (the Additional-info popup sits against
+        the window's right edge); otherwise it is centred.
+        """
+        win.update_idletasks()
+        if width is None:
+            width = win.winfo_reqwidth()
+        if height is None:
+            height = win.winfo_reqheight()
+        screen_w = self.winfo_screenwidth()
+        screen_h = self.winfo_screenheight()
+        width = max(1, min(width, screen_w - 20))
+        height = max(1, min(height, screen_h - 20))
+        if right:
+            x = self.winfo_rootx() + self.winfo_width() - width
+        else:
+            x = self.winfo_rootx() + max((self.winfo_width() - width) // 2, 0)
+        y = self.winfo_rooty() + max((self.winfo_height() - height) // 2, 0)
+        x = min(max(x, 8), max(screen_w - width - 8, 8))
+        y = min(max(y, 8), max(screen_h - height - 8, 8))
+        win.geometry(f"{width}x{height}+{x}+{y}")
+        win.lift()
 
     # ---------- theming ----------
 
@@ -679,11 +699,9 @@ class App(tk.Tk):
         ttk.Button(win, text="Close", command=win.destroy).pack(pady=(12, 16))
         win.bind("<Escape>", lambda _e: win.destroy())
         win.update_idletasks()
-        width = max(win.winfo_width(), 540)
-        height = min(win.winfo_height(), self.winfo_screenheight() - 80)
-        x = self.winfo_rootx() + (self.winfo_width() - width) // 2
-        y = self.winfo_rooty() + max((self.winfo_height() - height) // 2, 0)
-        win.geometry(f"{width}x{height}+{x}+{y}")
+        width = max(win.winfo_reqwidth(), 540)
+        height = min(win.winfo_reqheight(), self.winfo_screenheight() - 80)
+        self._place_window(win, width, height)
 
     def _selected_model(self):
         """(title, info, [(label, value), ...]) for the active tab's selected row."""
@@ -835,14 +853,9 @@ class App(tk.Tk):
         # description into unreadability (it scrolls instead), and never taller
         # than the screen. The window is fixed-size, so this is the whole
         # contract: everything below the header lives in the scrolling area.
-        # Fixed-size window: size it to the content, capped so the header plus a
-        # readable slice of description plus Close fit — the rest scrolls.
         height = min(max(win.winfo_reqheight(), head.winfo_reqheight() + 200),
                      head.winfo_reqheight() + 260, screen_cap)
-        x = self.winfo_rootx() + self.winfo_width() - width
-        y = self.winfo_rooty() + max((self.winfo_height() - height) // 2, 0)
-        y = max(min(y, self.winfo_screenheight() - height - 8), 8)
-        win.geometry(f"{width}x{height}+{x}+{y}")
+        self._place_window(win, width, height, right=True)
 
     def _open_doc(self, filename):
         path = os.path.join(os.path.dirname(os.path.abspath(__file__)), filename)
@@ -1471,12 +1484,7 @@ class App(tk.Tk):
             side="right", padx=(0, 8))
 
         win.bind("<Escape>", lambda _e: win.destroy())
-        win.update_idletasks()
-        w, h = win.winfo_reqwidth(), win.winfo_reqheight()
-        x = self.winfo_rootx() + max((self.winfo_width() - w) // 2, 0)
-        y = self.winfo_rooty() + max((self.winfo_height() - h) // 2, 0)
-        win.geometry(f"{w}x{h}+{x}+{y}")
-        win.lift()
+        self._place_window(win)
 
     def set_main_model(self):
         slug = self.selected_slug
