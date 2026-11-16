@@ -354,6 +354,9 @@ def fetch_free_models(permanent_only=True):
                 row["name"] = model.get("id")
                 row["compaction"] = False
                 row["source"] = "openrouter"
+                extra = dict(row.get("extra") or {})
+                extra["or_slug"] = model.get("id")
+                row["extra"] = extra
                 add(row, "openrouter")
                 or_count += 1
 

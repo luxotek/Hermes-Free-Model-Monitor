@@ -529,6 +529,16 @@ class App(tk.Tk):
                  ("Temp", values[5]), ("Status", values[6]), ("Notes", values[7])]
         return values[1], self._model_info(values[1]), facts
 
+    @staticmethod
+    def _source_url(info):
+        """Where the model actually lives: HuggingFace, OpenRouter or Nous."""
+        extra = (info or {}).get("extra") or {}
+        if extra.get("hf"):
+            return f"https://huggingface.co/{extra['hf']}", "HuggingFace"
+        if extra.get("or_slug"):
+            return f"https://openrouter.ai/{extra['or_slug']}", "OpenRouter"
+        return "https://portal.nousresearch.com/models", "Nous Portal"
+
     def open_model_info(self):
         """Popup sheet for the selected row — everything the panel used to squeeze in."""
         self._close_popups()
@@ -564,6 +574,13 @@ class App(tk.Tk):
                  justify="left", wraplength=wrap).pack(fill="x", pady=(3, 0))
         tk.Label(head, text=chips, bg=p["bg"], fg=p["accent"], font=(FONT, SZ_POPUP_META),
                  anchor="w", justify="left", wraplength=wrap).pack(fill="x", pady=(3, 0))
+        url, host = self._source_url(info)
+        link = tk.Label(head, text=f"Full description on {host} →",
+                        bg=p["bg"], fg=p["accent"], cursor="hand2", anchor="w",
+                        font=("Segoe UI Semibold", SZ_POPUP_META, "underline"),
+                        justify="left", wraplength=wrap)
+        link.pack(fill="x", pady=(4, 0))
+        link.bind("<Button-1>", lambda _e, u=url: webbrowser.open(u))
 
         box = tk.Frame(win, bg=p["border"])
         box.pack(fill="both", expand=True, padx=22)
