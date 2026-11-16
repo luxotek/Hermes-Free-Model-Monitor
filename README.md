@@ -26,6 +26,10 @@ dark sheet says *"Hermes Agent is not running — this app requires Hermes Agent
 to be running"* with **Check again** and **Continue anyway**. The check fails
 open: if the process list cannot be read, the app starts anyway.
 
+Only one copy runs at a time. A second launch finds the named mutex already
+held, raises the first copy's window (restoring it from the taskbar) and exits
+silently — no dialog, no extra window.
+
 ## Views
 
 - **Tabs** (default): *Free models* = the live catalog (context, inputs, output,

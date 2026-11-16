@@ -1,5 +1,6 @@
 #!/usr/bin/env python3w
 """Hermes Free Model Monitor - tiny window that follows the installed Hermes skin."""
+import ctypes
 import datetime
 import json
 import os
@@ -56,6 +57,59 @@ def save_ui_state(state):
             json.dump(state, fh)
     except OSError:
         pass
+
+
+# ---------- one copy at a time ----------
+
+SINGLE_INSTANCE_MUTEX = "HFMM-single-instance"
+ERROR_ALREADY_EXISTS = 183
+_KERNEL32 = ctypes.WinDLL("kernel32", use_last_error=True)
+_USER32 = ctypes.WinDLL("user32", use_last_error=True)
+# Keeps the mutex handle alive: dropping it would release the lock.
+_MUTEX_HELD = []
+
+
+def _bring_to_front(title):
+    """Restore and focus an existing HFMM window (best effort)."""
+    hwnd = _USER32.FindWindowW(None, title)
+    if not hwnd:
+        return False
+    if _USER32.IsIconic(hwnd):
+        _USER32.ShowWindow(hwnd, 9)  # SW_RESTORE
+    # SetForegroundWindow refuses a process that does not own the foreground;
+    # attaching the two input queues for the call is the standard workaround.
+    foreground = _USER32.GetForegroundWindow()
+    if foreground:
+        other_thread = _USER32.GetWindowThreadProcessId(foreground, None)
+        mine = _KERNEL32.GetCurrentThreadId()
+        if other_thread != mine:
+            _USER32.AttachThreadInput(other_thread, mine, True)
+            _USER32.BringWindowToTop(hwnd)
+            _USER32.SetForegroundWindow(hwnd)
+            _USER32.AttachThreadInput(other_thread, mine, False)
+            return True
+    _USER32.BringWindowToTop(hwnd)
+    _USER32.SetForegroundWindow(hwnd)
+    return True
+
+
+def _single_instance_gate():
+    """True when this process may run; False when another copy already is.
+
+    A second copy raises the first one's window and exits silently. Fails open:
+    if the mutex cannot be created, let the app run rather than lock it out.
+    """
+    if os.name != "nt":
+        return True
+    handle = _KERNEL32.CreateMutexW(None, False, SINGLE_INSTANCE_MUTEX)
+    if not handle:
+        return True
+    if ctypes.get_last_error() != ERROR_ALREADY_EXISTS:
+        _MUTEX_HELD.append(handle)
+        return True
+    _KERNEL32.CloseHandle(handle)
+    _bring_to_front(APP_NAME)
+    return False
 
 
 def _plain(text):
@@ -1665,6 +1719,7 @@ class App(tk.Tk):
 
 if __name__ == "__main__":
     try:
-        App().mainloop()
+        if _single_instance_gate():
+            App().mainloop()
     except KeyboardInterrupt:
         pass
