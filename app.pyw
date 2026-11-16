@@ -117,9 +117,65 @@ class App(tk.Tk):
         )
         self._build_ui()
         self._sync_combo()
-        self.after(200, self.refresh)
+        if hermes_state.hermes_running():
+            self.after(200, self.refresh)
+        else:
+            self._show_hermes_missing()
         self._apply_timers()
         self._schedule_poll()
+
+    def _show_hermes_missing(self):
+        """Startup gate: HFMM reads Hermes's live config and logs, so Hermes
+        has to be open. Dark sheet, matching the window's own palette."""
+        p = self.palette
+        win = tk.Toplevel(self)
+        win.title("Hermes Agent is not running")
+        win.configure(bg=p["bg"])
+        win.resizable(False, False)
+        win.transient(self)
+        win.grab_set()
+        self._hermes_win = win
+
+        tk.Label(win, text="Hermes Agent is not running", bg=p["bg"], fg=p["fg"],
+                 font=("Segoe UI Semibold", SZ_POPUP)).pack(padx=30, pady=(26, 8))
+        tk.Label(win, text="This app requires Hermes Agent to be running —\n"
+                           "it reads Hermes's live model config and logs.\n"
+                           "Open Hermes, then check again.",
+                 bg=p["bg"], fg=p["dim"], font=(FONT, SZ_INFO),
+                 justify="left").pack(padx=30, pady=(0, 20))
+
+        row = tk.Frame(win, bg=p["bg"])
+        row.pack(fill="x", padx=30, pady=(0, 24))
+        ttk.Button(row, text="Continue anyway", command=self._dismiss_hermes_gate).pack(
+            side="right")
+        ttk.Button(row, text="Check again", command=self._retry_hermes).pack(
+            side="right", padx=(0, 8))
+
+        win.bind("<Escape>", lambda _e: self._dismiss_hermes_gate())
+        win.update_idletasks()
+        w, h = win.winfo_reqwidth(), win.winfo_reqheight()
+        x = self.winfo_rootx() + max((self.winfo_width() - w) // 2, 0)
+        y = self.winfo_rooty() + max((self.winfo_height() - h) // 2, 0)
+        win.geometry(f"{w}x{h}+{x}+{y}")
+        win.lift()
+
+    def _retry_hermes(self):
+        if not hermes_state.hermes_running():
+            self._flash_status("Hermes Agent is still not running")
+            return
+        self._dismiss_hermes_gate()
+        self.after(200, self.refresh)
+
+    def _dismiss_hermes_gate(self):
+        win = getattr(self, "_hermes_win", None)
+        if win is not None:
+            try:
+                win.destroy()
+            except Exception:  # noqa: BLE001
+                pass
+            self._hermes_win = None
+        if not self._busy and not self.tree.get_children():
+            self.after(200, self.refresh)
 
     # ---------- window geometry ----------
 

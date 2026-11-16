@@ -70,6 +70,31 @@ def run_hermes(args, timeout=15):
     )
 
 
+def hermes_running():
+    """Best-effort check for the Hermes desktop app process.
+
+    Returns True when it is running *or* when the check itself fails — a
+    detector that cannot see the process list must not lock the app out.
+    """
+    if os.name != "nt":
+        return True
+    try:
+        proc = subprocess.run(
+            ["tasklist", "/FO", "CSV", "/NH"],
+            capture_output=True, text=True, timeout=10, **_windowless_kwargs(),
+        )
+        out = proc.stdout or ""
+    except Exception:  # noqa: BLE001
+        return True
+    for line in out.splitlines():
+        if not line.startswith('"'):
+            continue
+        image = line.split('","', 1)[0].strip('"').strip().lower()
+        if image.startswith("hermes"):
+            return True
+    return False
+
+
 def _get(key):
     """Read one value from Hermes config via the CLI (never hand-edits config.yaml)."""
     if key in _RAW:

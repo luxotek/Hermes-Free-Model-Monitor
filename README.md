@@ -21,6 +21,11 @@ that already have Hermes installed; the source run below is always current.
 Double-click **`run.ps1`** (right-click > Run with PowerShell) or **`run.cmd`**.
 `run.cmd` keeps a console open so you can see tracebacks if something breaks.
 
+On startup the app looks for the Hermes desktop process; if it is not running a
+dark sheet says *"Hermes Agent is not running — this app requires Hermes Agent
+to be running"* with **Check again** and **Continue anyway**. The check fails
+open: if the process list cannot be read, the app starts anyway.
+
 ## Views
 
 - **Tabs** (default): *Free models* = the live catalog (context, inputs, output,
