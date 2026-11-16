@@ -30,8 +30,9 @@ Double-click **`run.ps1`** (right-click > Run with PowerShell) or **`run.cmd`**.
   *Hermes config* = everything Hermes has pinned (`model.default`, auxiliary
   task models, fallback chain) classified as `FREE` / `PAID` / `MISSING`, with
   context and flags (vision / video / compaction) filled in from the catalog
-  where known, a **Temp** column flagging previews and expiry dates, plus recent
-  per-model API call counts from `logs/agent.log`.
+  where known, a **Temp** column flagging previews and expiry dates. Recent
+  per-model API call counts from `logs/agent.log` live in a footer line under
+  the tabs, just above the status line.
 - **Additional info**: select a row (any tab), then use the button above the
   status line or the right-click menu entry to open a popup sheet with the full
   picture — column values, moderation/reasoning/free-tier flags, the catalog
