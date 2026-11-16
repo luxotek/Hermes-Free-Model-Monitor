@@ -201,7 +201,9 @@ def configured_models():
     if main:
         rows.append({
             "role": "main (default)",
-            "provider": out.get("model.provider", "") or "nous",
+            # Hermes's own config value, never a guess: when it is unset the
+            # app falls back to the route the model was reported on.
+            "provider": out.get("model.provider", ""),
             "model": main,
         })
     for section, provider, model in _parse_aux(out.get("auxiliary", "")):

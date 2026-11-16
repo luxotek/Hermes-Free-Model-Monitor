@@ -128,8 +128,16 @@ product by anyone else; luxotek retains all commercial rights (`LICENSE`).
 ## Where the token comes from
 
 The app reads your existing Hermes login from
-`%LOCALAPPDATA%\hermes\auth.json` (`providers.nous.access_token`). If it reports
-an auth error, re-login to the Portal through Hermes (`hermes setup`) and try again.
+`%LOCALAPPDATA%\hermes\auth.json` (`providers.nous.access_token`). The portal
+and inference base URLs come from the same file (`portal_base_url`,
+`inference_base_url`) — if either is missing the app says so and stops rather
+than falling back to a built-in address. If it reports an auth error, re-login
+to the Portal through Hermes (`hermes setup`) and try again.
+
+Nothing in the window substitutes a constant for API data: the provider shown
+for a model comes from the route the APIs report (or from Hermes's own
+`model.provider` when the model is not on the free list), and the toolbar's
+`account:` line is derived the same way — blank when neither source answers.
 
 ## OpenRouter free models
 

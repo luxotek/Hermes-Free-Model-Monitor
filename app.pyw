@@ -340,6 +340,10 @@ class App(tk.Tk):
         tab_cfg = tk.Frame(self.nb, bg=self._c("bg"))
         self.nb.add(tab_free, text="Free models")
         self.nb.add(tab_cfg, text="Hermes config")
+        # Switching tabs does not necessarily resize the newly shown tree, so
+        # no <Configure> fires and a scrollbar sized for the other tab (or for
+        # the previous window size) stays on screen.
+        self.nb.bind("<<NotebookTabChanged>>", lambda _e: self._schedule_scroll_sync())
         self._build_catalog_tab(tab_free)
         self._build_config_tab(tab_cfg)
         self.tree.bind("<<TreeviewSelect>>", self._on_tree_select)
@@ -595,11 +599,11 @@ class App(tk.Tk):
         fact_map = dict(facts)
         if on_free:
             return [
-                ("Context", fact_map.get("Context", "-"), "fg"),
-                ("Inputs", fact_map.get("Inputs", "-"), "fg"),
-                ("Output", fact_map.get("Output", "-"), "fg"),
-                ("Released", fact_map.get("Released", "-"), "fg"),
-                ("Source", fact_map.get("Source", "-"), "fg"),
+                ("Context", fact_map.get("Context", "None"), "fg"),
+                ("Inputs", fact_map.get("Inputs", "None"), "fg"),
+                ("Output", fact_map.get("Output", "None"), "fg"),
+                ("Released", fact_map.get("Released", "None"), "fg"),
+                ("Source", fact_map.get("Source", "None"), "fg"),
             ]
         status = fact_map.get("Status", "")
         temp = self._temp_text(info)
@@ -742,6 +746,19 @@ class App(tk.Tk):
         if vscroll is not None:
             self._sync_vscroll(tree, vscroll)
 
+    @staticmethod
+    def _shown(widget):
+        """Is this widget actually packed? `winfo_ismapped` is not the test.
+
+        A scrollbar inside an unselected notebook tab is unpacked-or-not but
+        *unmapped* either way, so `winfo_ismapped` reads False for a scrollbar
+        that is correctly showing and the sync then "fixes" it wrongly.
+        """
+        try:
+            return widget.winfo_manager() == "pack"
+        except Exception:  # noqa: BLE001
+            return False
+
     def _sync_vscroll(self, tree, vscroll):
         if tree is None or vscroll is None:
             return
@@ -753,7 +770,7 @@ class App(tk.Tk):
         tree.update_idletasks()
         first, last = tree.yview()
         need = last - first < 0.999
-        if need == bool(vscroll.winfo_ismapped()):
+        if need == self._shown(vscroll):
             return
         if need:
             vscroll.pack(side="right", fill="y", before=tree)
@@ -795,7 +812,7 @@ class App(tk.Tk):
         if tree is None or hscroll is None:
             return
         try:
-            if not tree.winfo_exists():
+            if not tree.winfo_exists() or not tree.winfo_ismapped():
                 return
         except Exception:
             return
@@ -803,7 +820,7 @@ class App(tk.Tk):
         if viewport <= 1:
             return  # not laid out yet; <Configure> re-syncs
         need = sum(tree.column(col, "width") for col in tree["columns"]) > viewport
-        if need == bool(hscroll.winfo_ismapped()):
+        if need == self._shown(hscroll):
             return
         if need:
             # `before` keeps the scrollbar ahead of the tree in pack order; when
@@ -1176,7 +1193,24 @@ class App(tk.Tk):
             self._evaluate_active_alert(usage)
 
         self._refresh_status()
-        self.info.configure(text="account: free tier")
+        self._render_account(cfg_rows)
+
+    def _render_account(self, cfg_rows):
+        """Toolbar line: which provider actually serves the pinned main model.
+
+        Route first (the APIs' own answer), then Hermes's configured provider.
+        No constant — blank when neither says.
+        """
+        main = next((r["model"] for r in (cfg_rows or [])
+                     if r["role"].startswith("main")), None)
+        provider = None
+        if main:
+            row = next((m for m in self.models if m.get("name") == main), None)
+            provider = hermes_state.provider_for_route((row or {}).get("route"))
+        if not provider:
+            provider = next((r.get("provider") for r in (cfg_rows or [])
+                             if r["role"].startswith("main") and r.get("provider")), "")
+        self.info.configure(text=f"account: {provider}" if provider else "")
 
     def _evaluate_alerts(self, cfg_rows, usage, stamp):
         free_names = {m["name"] for m in self.models}

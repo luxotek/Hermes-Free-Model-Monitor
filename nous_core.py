@@ -4,9 +4,6 @@ import os
 import re
 import urllib.request
 
-DEFAULT_PORTAL = "https://portal.nousresearch.com"
-DEFAULT_INFERENCE = "https://inference-api.nousresearch.com/v1"
-
 
 def hermes_home():
     """Locate the Hermes home directory that holds auth.json."""
@@ -30,10 +27,20 @@ def load_auth():
     with open(os.path.join(home, "auth.json"), encoding="utf-8") as fh:
         data = json.load(fh)
     prov = data["providers"]["nous"]
+    # The base URLs are read from the login, never assumed: a build that
+    # hardcodes them would keep talking to the old host after a migration.
+    portal = prov.get("portal_base_url")
+    inference = prov.get("inference_base_url")
+    if not portal or not inference:
+        raise RuntimeError(
+            "auth.json is missing portal_base_url / inference_base_url — "
+            "run `hermes setup` again."
+        )
     return {
         "token": prov["access_token"],
-        "portal": prov.get("portal_base_url", DEFAULT_PORTAL).rstrip("/"),
-        "inference": prov.get("inference_base_url", DEFAULT_INFERENCE).rstrip("/"),
+        "portal": portal.rstrip("/"),
+        "inference": inference.rstrip("/"),
+        "portal_host": re.sub(r"^[a-z]+://", "", portal.rstrip("/")).split("/")[0],
     }
 
 
