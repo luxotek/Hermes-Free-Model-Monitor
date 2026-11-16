@@ -271,7 +271,7 @@ class App(tk.Tk):
             widget.destroy()
         self._build_toolbar()
         self._build_notebook()
-        self._build_detail_panel()
+        self._build_info_bar()
         self._build_status()
 
     def _build_toolbar(self):
@@ -315,33 +315,14 @@ class App(tk.Tk):
         self.tree.bind("<<TreeviewSelect>>", self._on_tree_select)
         self.tree2.bind("<<TreeviewSelect>>", self._on_tree_select)
 
-    def _build_detail_panel(self):
+    def _build_info_bar(self):
         p = self.palette
-        wrap = tk.Frame(self, bg=p["border"])
-        wrap.pack(fill="x", padx=14, pady=(2, 2))
-        inner = tk.Frame(wrap, bg=p["card"])
-        inner.pack(fill="x")
-        self.detail_title = tk.Label(
-            inner, text="Select a row to see its full details.",
-            bg=p["card"], fg=p["dim"], font=("Segoe UI Semibold", SZ_INFO),
-            anchor="w", padx=12, pady=8,
-        )
-        self.detail_title.pack(fill="x")
-        self.detail_chips = tk.Label(
-            inner, text="", bg=p["card"], fg=p["fg"], font=(FONT, SZ_INFO),
-            anchor="w", justify="left", padx=12, pady=3,
-        )
-        self.detail_chips.pack(fill="x")
-        self.detail_body = tk.Label(
-            inner, text="", bg=p["card"], fg=p["fg"], font=(FONT, SZ_INFO - 1),
-            anchor="w", justify="left", padx=12, pady=1,
-        )
-        self.detail_body.pack(fill="x")
-        self.detail_scores = tk.Label(
-            inner, text="", bg=p["card"], fg=p["dim"], font=(FONT, SZ_INFO - 1),
-            anchor="w", justify="left", padx=12, pady=6,
-        )
-        self.detail_scores.pack(fill="x")
+        bar = tk.Frame(self, bg=p["bg"])
+        bar.pack(fill="x", padx=14, pady=(2, 0))
+        self.info_btn = ttk.Button(bar, text="Additional info",
+                                   command=self.open_model_info)
+        self.info_btn.pack(side="right")
+        self.info_btn.state(["disabled"])
 
     def _build_catalog_tab(self, parent):
         wrap = tk.Frame(parent, bg=self._c("bg"))
@@ -510,6 +491,87 @@ class App(tk.Tk):
         width = max(win.winfo_width(), 540)
         height = min(win.winfo_height(), self.winfo_screenheight() - 80)
         x = self.winfo_rootx() + (self.winfo_width() - width) // 2
+        y = self.winfo_rooty() + max((self.winfo_height() - height) // 2, 0)
+        win.geometry(f"{width}x{height}+{x}+{y}")
+
+    def _selected_model(self):
+        """(title, info, [(label, value), ...]) for the active tab's selected row."""
+        on_free = self.nb.index(self.nb.select()) == 0
+        tree = self.tree if on_free else self.tree2
+        sel = tree.selection()
+        if not sel:
+            return None
+        values = tree.item(sel[0])["values"]
+        if on_free:
+            info = next((m for m in self.models if m["name"] == values[0]), None) or {}
+            facts = [("Context", values[1]), ("Inputs", values[2]),
+                     ("Output", values[3]), ("Released", values[4]),
+                     ("Flags", values[5]), ("Source", values[6])]
+            return values[0], info, facts
+        facts = [("Role", values[0]), ("Provider", values[2]),
+                 ("Context", values[3]), ("Flags", values[4]),
+                 ("Temp", values[5]), ("Status", values[6]), ("Notes", values[7])]
+        return values[1], self._model_info(values[1]), facts
+
+    def open_model_info(self):
+        """Popup sheet for the selected row — everything the panel used to squeeze in."""
+        p = self.palette
+        picked = self._selected_model()
+        if picked is None:
+            return
+        title, info, facts = picked
+        on_free = self.nb.index(self.nb.select()) == 0
+        chips, body, scores = self._model_detail(info, lifecycle=on_free)
+        if not on_free:
+            status = next((v for k, v in facts if k == "Status"), "")
+            if status:
+                chips = f"status {status.lower()}   ·   {chips}"
+
+        win = tk.Toplevel(self)
+        win.title(f"Additional info — {title}")
+        win.configure(bg=p["bg"])
+        win.resizable(False, False)
+        win.transient(self)
+        self._info_win = win
+
+        width = max(min(self.winfo_width() - 48, 700), 460)
+        wrap = width - 44
+
+        head = tk.Frame(win, bg=p["bg"])
+        head.pack(fill="x", padx=22, pady=(16, 4))
+        tk.Label(head, text=title, bg=p["bg"], fg=p["fg"],
+                 font=("Segoe UI Semibold", 14), anchor="w", justify="left",
+                 wraplength=wrap).pack(fill="x")
+        tk.Label(head, text="   ·   ".join(f"{k} {v}" for k, v in facts),
+                 bg=p["bg"], fg=p["dim"], font=(FONT, 12), anchor="w",
+                 justify="left", wraplength=wrap).pack(fill="x", pady=(3, 0))
+        tk.Label(head, text=chips, bg=p["bg"], fg=p["accent"], font=(FONT, 12),
+                 anchor="w", justify="left", wraplength=wrap).pack(fill="x", pady=(3, 0))
+
+        box = tk.Frame(win, bg=p["border"])
+        box.pack(fill="both", expand=True, padx=22)
+        inner = tk.Frame(box, bg=p["card"])
+        inner.pack(fill="both", expand=True)
+        text = tk.Text(inner, height=14, bg=p["card"], fg=p["fg"], font=(FONT, 12),
+                       relief="flat", wrap="word", padx=10, pady=8)
+        text.pack(side="left", fill="both", expand=True)
+        sb = ttk.Scrollbar(inner, orient="vertical", command=text.yview)
+        sb.pack(side="right", fill="y")
+        text.configure(yscrollcommand=sb.set)
+        text.insert("end", body + "\n")
+        if scores:
+            text.insert("end", "\n" + scores + "\n")
+        text.configure(state="disabled")
+
+        ttk.Button(win, text="Close", command=win.destroy).pack(pady=(10, 14))
+        win.bind("<Escape>", lambda _e: win.destroy())
+        win.bind("<Destroy>", lambda _e: setattr(self, "_info_win", None))
+
+        win.update_idletasks()
+        panel_h = max(self.nb.winfo_height() - 6, 200)
+        width = min(width, self.winfo_screenwidth() - 20)
+        height = min(max(win.winfo_reqheight(), 200), panel_h)
+        x = self.winfo_rootx() + self.winfo_width() - width
         y = self.winfo_rooty() + max((self.winfo_height() - height) // 2, 0)
         win.geometry(f"{width}x{height}+{x}+{y}")
 
@@ -906,41 +968,11 @@ class App(tk.Tk):
         if not sel:
             return
         values = tree.item(sel[0])["values"]
-        title = ""
-        chips = ""
-        color = None
-        chips = body = scores = ""
-        if tree is self.tree:
-            self.selected_slug = values[0]
-            info = next((m for m in self.models if m["name"] == values[0]), None)
-            title = values[0]
-            chips, body, scores = self._model_detail(info, lifecycle=True)
-        elif tree is self.tree2:
-            self.selected_slug = values[1]
-            status = values[6].lower()
-            color = {"free": self._c("ok"), "paid": self._c("warn"), "missing": self._c("error")}.get(status)
-            title = f"{values[0]}  →  {values[1]}"
-            note = values[7]
-            chips, body, scores = self._model_detail(
-                self._model_info(values[1]), extra_bits=[f"status {status}"])
-            if note and note != "-":
-                body = f"{body}\n{note}"
-
-        if hasattr(self, "detail_title"):
-            self.detail_title.configure(
-                text=title or "Select a row to see its full details.",
-                fg=color if color else (self._c("fg") if title else self._c("dim")),
-            )
-            width = max(self.winfo_width() - 48, 320)
-            self.detail_chips.configure(text=chips, wraplength=width)
-            for label, text in ((self.detail_body, body), (self.detail_scores, scores)):
-                label.configure(text=text, wraplength=width)
-                if text:
-                    label.pack(fill="x")
-                else:
-                    label.pack_forget()
+        self.selected_slug = values[0] if tree is self.tree else values[1]
         if self.set_main_btn is not None:
             self.set_main_btn.state(["!disabled"])
+        if getattr(self, "info_btn", None) is not None:
+            self.info_btn.state(["!disabled"])
 
     def _show_error(self, error):
         self._busy = False
@@ -1040,6 +1072,7 @@ class App(tk.Tk):
 
         menu.add_separator()
         menu.add_command(label="Copy model name", command=self.copy_selected)
+        menu.add_command(label="Additional info", command=self.open_model_info)
         menu.tk_popup(event.x_root, event.y_root)
         menu.grab_release()
 

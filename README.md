@@ -32,8 +32,11 @@ Double-click **`run.ps1`** (right-click > Run with PowerShell) or **`run.cmd`**.
   context and flags (vision / video / compaction) filled in from the catalog
   where known, a **Temp** column flagging previews and expiry dates, plus recent
   per-model API call counts from `logs/agent.log`.
-- **Detail panel**: click any row (any tab) to see its full info stacked under
-  the list — no more squinting at truncated columns.
+- **Additional info**: select a row (any tab), then use the button above the
+  status line or the right-click menu entry to open a popup sheet with the full
+  picture — column values, moderation/reasoning/free-tier flags, the catalog
+  description and any benchmark scores. Right-justified to the window, vertically
+  centred, and never taller than the tab panel.
 - **Bubbles**: self-contained toast cards in the window's bottom-right corner
   (UniGetUI-style): newest at the bottom, stack upward, auto-dismiss by severity,
   click to close. Fired on model alerts, active-model loss, probe summaries, and
@@ -124,7 +127,7 @@ credential pool), the **Free models** tab also pulls OpenRouter's
 
 | File | Purpose |
 |---|---|
-| `app.pyw` | The tkinter window (tabs, detail panel, toolbar, timers, Settings/About) |
+| `app.pyw` | The tkinter window (tabs, Additional-info popup, toolbar, timers, Settings/About) |
 | `nous_core.py` | Auth lookup + the two API calls + union logic |
 | `hermes_state.py` | Reads Hermes config via `hermes config get`; parses `agent.log` usage |
 | `theme.py` | Skin engine + desktop preset palettes, override persistence |
