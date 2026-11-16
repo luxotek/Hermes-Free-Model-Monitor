@@ -27,10 +27,10 @@ SZ_HEAD = 13
 COLS = ("Model", "Context", "Inputs", "Output", "Released", "Flags", "Source")
 WIDTHS = {"Model": 360, "Context": 110, "Inputs": 160, "Output": 110,
           "Released": 110, "Flags": 200, "Source": 120}
-CFG_COLS = ("Role", "Model", "Provider", "Context", "Flags", "Temp", "Status", "Notes")
+CFG_COLS = ("Role", "Model", "Status", "Notes", "Temp", "Last error", "Fallback", "Calls")
 CFG_WIDTHS = {
-    "Role": 190, "Model": 340, "Provider": 90, "Context": 110,
-    "Flags": 200, "Temp": 150, "Status": 100, "Notes": 240,
+    "Role": 130, "Model": 200, "Status": 74, "Notes": 160,
+    "Temp": 150, "Last error": 205, "Fallback": 340, "Calls": 56,
 }
 
 SZ_INFO = 14
@@ -62,6 +62,11 @@ def save_ui_state(state):
         pass
 
 
+def _plain(text):
+    """Undo the newlines the config table wraps its cells with."""
+    return str(text).replace("\n", " ")
+
+
 class App(tk.Tk):
     def __init__(self):
         super().__init__()
@@ -80,6 +85,8 @@ class App(tk.Tk):
         self._fb_chain = {}
         self._drag_fb = None
         self.usage_data = {"counts": {}, "fallbacks": [], "last": None}
+        self.trouble_data = {}
+        self.limits_data = {}
         self.palette = dict(theme.FALLBACK_PALETTE)
         self.meta = {}
         self.catalog_meta = {}
@@ -172,6 +179,7 @@ class App(tk.Tk):
     def _style(self):
         p = self.palette
         style = ttk.Style(self)
+        self._cfg_style = style
         style.theme_use("clam")
         style.configure(
             "Treeview", background=p["card"], foreground=p["fg"],
@@ -181,6 +189,22 @@ class App(tk.Tk):
         style.configure(
             "Treeview.Heading", background=p["head_bg"], foreground=p["head_fg"],
             relief="flat", font=("Segoe UI Semibold", SZ_HEAD), padding=(8, 6),
+        )
+        # The config table wraps its cells, so it carries its own rowheight
+        # (recomputed from the content) and must not touch the free tab's.
+        style.configure(
+            "Cfg.Treeview", background=p["card"], foreground=p["fg"],
+            fieldbackground=p["card"], borderwidth=0, rowheight=38,
+            font=(FONT, SZ_TREE),
+        )
+        style.configure(
+            "Cfg.Treeview.Heading", background=p["head_bg"], foreground=p["head_fg"],
+            relief="flat", font=("Segoe UI Semibold", SZ_HEAD), padding=(8, 6),
+        )
+        style.map(
+            "Cfg.Treeview",
+            background=[("selected", p["selection"])],
+            foreground=[("selected", p["fg"])],
         )
         style.map(
             "Treeview",
@@ -218,7 +242,8 @@ class App(tk.Tk):
         self._sync_combo()
         for model in self.models:
             self._insert(model)
-        self._render_config(self.cfg_rows, self.usage_data)
+        self._render_config(self.cfg_rows, self.usage_data,
+                            self.trouble_data, self.limits_data)
         if hasattr(self, "tree") and hasattr(self.tree_hscroll, "winfo_exists"):
             self._autofit_columns(self.tree, self.tree_hscroll, self.tree_vscroll)
 
@@ -364,10 +389,17 @@ class App(tk.Tk):
         wrap = tk.Frame(parent, bg=p["bg"])
         wrap.pack(fill="both", expand=True)
 
+        self.limits = tk.Label(
+            wrap, text="Free-tier limits unknown — hit Refresh",
+            bg=p["bg"], fg=p["dim"], font=(FONT, SZ_INFO), anchor="w",
+        )
+        self.limits.pack(fill="x", padx=6, pady=(2, 0))
+
         inner = tk.Frame(wrap, bg=p["bg"])
         inner.pack(fill="both", expand=True)
 
-        self.tree2 = ttk.Treeview(inner, columns=CFG_COLS, show="headings", height=10)
+        self.tree2 = ttk.Treeview(inner, columns=CFG_COLS, show="headings",
+                                  height=10, style="Cfg.Treeview")
         for col in CFG_COLS:
             self.tree2.heading(col, text=col, anchor="w")
             self.tree2.column(col, width=CFG_WIDTHS[col], anchor="w")
@@ -528,10 +560,11 @@ class App(tk.Tk):
                      ("Output", values[3]), ("Released", values[4]),
                      ("Flags", values[5]), ("Source", values[6])]
             return values[0], info, facts
-        facts = [("Role", values[0]), ("Provider", values[2]),
-                 ("Context", values[3]), ("Flags", values[4]),
-                 ("Temp", values[5]), ("Status", values[6]), ("Notes", values[7])]
-        return values[1], self._model_info(values[1]), facts
+        facts = [("Role", _plain(values[0])), ("Status", _plain(values[2])),
+                 ("Notes", _plain(values[3])), ("Temp", _plain(values[4])),
+                 ("Last error", _plain(values[5])), ("Fallback", _plain(values[6])),
+                 ("Calls", _plain(values[7]))]
+        return _plain(values[1]), self._model_info(_plain(values[1])), facts
 
     @staticmethod
     def _source_url(info):
@@ -747,6 +780,8 @@ class App(tk.Tk):
             cfg_rows = []
             usage = None
             fb_entries = []
+            trouble = {}
+            limits = {}
             if models:
                 try:
                     models_out, meta_out = nous_core.fetch_free_models()
@@ -763,9 +798,34 @@ class App(tk.Tk):
                     fb_entries = hermes_state.fallback_chain()
                 except Exception:
                     fb_entries = []
-            self.after(0, lambda: self._show(models_out, meta_out, cfg_rows, usage, fb_entries))
+                try:
+                    trouble = hermes_state.troubleshooting()
+                except Exception:
+                    trouble = {}
+                try:
+                    limits = self._probe_limits(cfg_rows)
+                except Exception:
+                    limits = {}
+            self.after(0, lambda: self._show(
+                models_out, meta_out, cfg_rows, usage, fb_entries, trouble, limits))
 
         threading.Thread(target=work, daemon=True).start()
+
+    def _probe_limits(self, cfg_rows):
+        """The account's live ceilings: a probe for the Nous bucket, plus the
+        OpenRouter pool. One tiny completion; a 429 still answers."""
+        limits = {}
+        main = next((r["model"] for r in cfg_rows if r["role"].startswith("main")), None)
+        if main:
+            try:
+                limits["probe"] = hermes_state.probe_rate_limit(main)
+            except Exception as exc:  # noqa: BLE001
+                limits["probe"] = {"error": str(exc)}
+        try:
+            limits["openrouter"] = nous_core.openrouter_pool()
+        except Exception:
+            limits["openrouter"] = None
+        return limits
 
     def _classify(self, slug, free_names, catalog_ids):
         if slug in free_names:
@@ -787,22 +847,43 @@ class App(tk.Tk):
         return info or {}
 
     @staticmethod
-    def _flags_text(info):
-        flags = [name for name in ("vision", "video", "compaction") if info.get(name)]
-        return ", ".join(flags) or "-"
-
-    @staticmethod
     def _temp_text(info):
-        """Lifecycle column: preview/alpha/beta/exp marker and/or API end date."""
+        """Lifecycle column: the marker is the alarm, so it leads."""
         temp = info.get("temp") or ""
         end = info.get("end") or ""
         if temp and end:
-            return f"{temp} · ends {end}"
+            return f"{temp.upper()} · ends {end}"
         if temp:
-            return temp
+            return temp.upper()
         if end:
             return f"ends {end}"
         return "-"
+
+    @staticmethod
+    def _last_error_text(slug, trouble):
+        """`429 rate limit ×43 · retry 2s` — the delay only when it's a 429."""
+        rec = (trouble or {}).get("errors", {}).get(slug)
+        if not rec:
+            return "-"
+        text = f"{rec.get('label', 'error')} ×{rec.get('count', 1)}"
+        if rec.get("label", "").startswith("429"):
+            asked = (trouble or {}).get("retry", {}).get(slug)
+            wait = hermes_state._duration(asked)
+            if wait:
+                text += f" · retry {wait}"
+        return text
+
+    @staticmethod
+    def _fallback_text(slug, trouble):
+        """`→ stepfun/step-3.7-flash:free ×3` (failed over to) / `← …` (caught one)."""
+        rec = (trouble or {}).get("fallbacks", {}).get(slug)
+        if not rec:
+            return "-"
+        return f"{rec['dir']} {rec['other']} ×{rec['count']}"
+
+    @staticmethod
+    def _calls_text(slug, trouble):
+        return str((trouble or {}).get("calls", {}).get(slug, 0))
 
     @staticmethod
     def _model_detail(info, extra_bits=None, lifecycle=False):
@@ -872,27 +953,31 @@ class App(tk.Tk):
             ),
         )
 
-    def _render_config(self, rows, usage):
+    def _render_config(self, rows, usage, trouble=None, limits=None):
         self.cfg_rows = rows
         self.usage_data = usage
+        self.trouble_data = trouble or {}
+        self.limits_data = limits or {}
         if not hasattr(self, "tree2"):
             return
+        trouble = trouble or {}
         self.tree2.delete(*self.tree2.get_children())
         free_names = {m["name"] for m in self.models}
         catalog_ids = set(self.catalog_meta.get("catalog_ids", []))
         for row in rows:
             status, detail = self._classify(row["model"], free_names, catalog_ids)
             info = self._model_info(row["model"])
-            context = info.get("context")
+            slug = row["model"]
+            values = (
+                row["role"], slug, status.upper(), detail,
+                self._temp_text(info),
+                self._last_error_text(slug, trouble),
+                self._fallback_text(slug, trouble),
+                self._calls_text(slug, trouble),
+            )
             self.tree2.insert(
                 "", "end",
-                values=(
-                    row["role"], row["model"], row["provider"],
-                    f"{context:,}" if context else "?",
-                    self._flags_text(info),
-                    self._temp_text(info),
-                    status.upper(), detail,
-                ),
+                values=tuple(self._wrap_row(values)),
                 tags=(status,),
             )
 
@@ -901,7 +986,7 @@ class App(tk.Tk):
         self._fb_rows = []
         self._fb_chain = {}
         for item in self.tree2.get_children():
-            role = str(self.tree2.item(item)["values"][0])
+            role = _plain(self.tree2.item(item)["values"][0])
             if role.startswith("fallback #"):
                 try:
                     self._fb_chain[item] = int(role.split("#", 1)[1]) - 1
@@ -919,6 +1004,8 @@ class App(tk.Tk):
             text += f" · fallbacks fired: {len(fallbacks)}"
         self.usage.configure(text=text)
 
+        self._render_limits(limits)
+
         if rows:
             self._clear_empty("config")
         elif getattr(self, "_data_loaded", False) and hasattr(self, "tree2"):
@@ -928,9 +1015,86 @@ class App(tk.Tk):
                 ["Nothing returned for model.default, auxiliary pins, or fallbacks.",
                  "Tip: anything pinned here is classified FREE / PAID / MISSING."],
             )
-        self._autofit_columns(self.tree2, self.tree2_hscroll, self.tree2_vscroll)
+        self._apply_row_height()
+        self._sync_hscroll(self.tree2, self.tree2_hscroll)
+        self._sync_vscroll(self.tree2, self.tree2_vscroll)
 
-    def _show(self, models, meta, cfg_rows, usage, fb_entries=None):
+    def _render_limits(self, limits):
+        """The account's live ceilings: Nous fair-share bucket + OpenRouter pool."""
+        if not hasattr(self, "limits"):
+            return
+        parts = []
+        probe = (limits or {}).get("probe") or {}
+        if probe.get("remaining") is not None and probe.get("limit"):
+            reset = probe.get("reset")
+            tail = f" · resets in {hermes_state._duration(reset)}" if reset else ""
+            parts.append(
+                f"Nous free tier: {probe['remaining']}/{probe['limit']} requests{tail}"
+            )
+        pool = (limits or {}).get("openrouter")
+        if pool and pool.get("limit"):
+            parts.append(
+                f"OpenRouter free pool: {pool.get('remaining')}/{pool['limit']} today"
+            )
+        self.limits.configure(text="   ·   ".join(parts) or "Free-tier limits unknown — hit Refresh")
+
+    def _wrap_text(self, text, font, width):
+        """Insert newlines so a narrow column wraps instead of clipping.
+
+        ttk's treeview draws one line per cell unless the value carries `\\n`,
+        and its rows are a single height for the whole table — so the wrapping
+        is done here, and `_apply_row_height` grows the rows to fit.
+        """
+        text = str(text)
+        if not text or width <= 20:
+            return text
+        space = font.measure(" ")
+        lines = []
+        current = ""
+        for word in text.split():
+            candidate = word if not current else current + " " + word
+            if not current or font.measure(candidate) <= width:
+                current = candidate
+            else:
+                lines.append(current)
+                current = word
+        if current:
+            lines.append(current)
+        return "\n".join(lines)
+
+    def _wrap_row(self, values):
+        font = self._measure_font
+        out = []
+        for index, text in enumerate(values):
+            width = self.tree2.column(CFG_COLS[index], "width") - 18
+            out.append(self._wrap_text(text, font, width))
+        return out
+
+    def _apply_row_height(self):
+        """Grow the config rows to fit their wrapped cells (capped, so one long
+        row cannot eat the panel). ttk rows are uniform, so the tallest wins."""
+        if not hasattr(self, "tree2"):
+            return
+        lines = 1
+        for item in self.tree2.get_children():
+            for value in self.tree2.item(item)["values"]:
+                lines = max(lines, str(value).count("\n") + 1)
+        lines = min(lines, 2)
+        self._cfg_style.configure(
+            "Cfg.Treeview",
+            rowheight=lines * self._measure_font.metrics("linespace") + 12,
+        )
+
+    def _sync_hscroll(self, tree, hscroll):
+        total = sum(tree.column(col, "width") for col in tree["columns"])
+        tree.update_idletasks()
+        viewport = tree.winfo_width() - 4
+        if viewport > 1 and total <= viewport:
+            hscroll.pack_forget()
+        else:
+            hscroll.pack(side="bottom", fill="x")
+
+    def _show(self, models, meta, cfg_rows, usage, fb_entries=None, trouble=None, limits=None):
         self._busy = False
         if fb_entries is not None:
             self.fallback_entries = fb_entries
@@ -956,7 +1120,7 @@ class App(tk.Tk):
                 self._autofit_columns(self.tree, self.tree_hscroll, self.tree_vscroll)
             self.last_models = stamp
         if usage is not None:
-            self._render_config(cfg_rows, usage)
+            self._render_config(cfg_rows, usage, trouble, limits)
             self._data_loaded = True
             self.last_deep = stamp
             self._evaluate_alerts(cfg_rows, usage, stamp)
@@ -1004,7 +1168,7 @@ class App(tk.Tk):
         if not sel:
             return
         values = tree.item(sel[0])["values"]
-        self.selected_slug = values[0] if tree is self.tree else values[1]
+        self.selected_slug = values[0] if tree is self.tree else _plain(values[1])
         if self.set_main_btn is not None:
             self.set_main_btn.state(["!disabled"])
         if getattr(self, "info_btn", None) is not None:
@@ -1060,10 +1224,11 @@ class App(tk.Tk):
         if not tree.selection():
             return
         vals = tree.item(tree.selection()[0])["values"]
+        slug = _plain(vals[1])
         self.clipboard_clear()
-        self.clipboard_append(vals[1])
+        self.clipboard_append(slug)
         self.update()
-        self._flash_status("Copied: " + vals[1])
+        self._flash_status("Copied: " + slug)
 
     # ---------- fallback chain editing ----------
 
@@ -1265,7 +1430,7 @@ class App(tk.Tk):
         index = self._fb_chain[item]
         self.tree2.selection_set(item)
         self.tree2.focus_set()
-        self.selected_slug = self.tree2.item(item)["values"][1]
+        self.selected_slug = _plain(self.tree2.item(item)["values"][1])
         menu = self._menu()
         menu.add_command(
             label=f"Remove fallback #{index + 1}",

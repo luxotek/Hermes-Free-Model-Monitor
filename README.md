@@ -29,10 +29,22 @@ Double-click **`run.ps1`** (right-click > Run with PowerShell) or **`run.cmd`**.
   on;
   *Hermes config* = everything Hermes has pinned (`model.default`, auxiliary
   task models, fallback chain) classified as `FREE` / `PAID` / `MISSING`, with
-  context and flags (vision / video / compaction) filled in from the catalog
-  where known, a **Temp** column flagging previews and expiry dates. Recent
+  a **Temp** column flagging previews and expiry dates. Recent
   per-model API call counts from `logs/agent.log` live in a footer line under
   the tabs, just above the status line.
+- **Config tab columns**: `Role · Model · Status · Notes · Temp · Last error ·
+  Fallback · Calls`. Provider, Context and Flags are gone (the Free tab already
+  shows them). **Last error** is the newest `API call failed … model=…` line for
+  that slug (`429 rate limit ×43`, `404 gone ×7`), and appends the server's
+  asked-for delay for a 429 (`· retry 1h53m`). **Fallback** is the last
+  `Fallback activated: A → B` the slug took part in — `→ X` when it failed over
+  to X, `← Y` when it caught one. **Calls** is that slug's `API call #N` count.
+  Cells word-wrap and the rows grow to fit (capped at two lines), so a narrow
+  window wraps instead of scrolling.
+- **Free-tier limits** sit above the config table: the Nous fair-share bucket
+  (`48/50 requests · resets in 53s`, read from the `x-ratelimit-*` response
+  headers by one tiny completion) and OpenRouter's shared 50/day free pool.
+
 - **Additional info**: select a row (any tab), then use the button above the
   status line or the right-click menu entry to open a popup sheet with the full
   picture — column values, moderation/reasoning/free-tier flags, the catalog

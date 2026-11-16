@@ -215,6 +215,33 @@ def openrouter_key():
     return None
 
 
+def openrouter_pool():
+    """The free-tier daily request pool from OpenRouter's /api/v1/key.
+
+    ``free_model_daily_requests`` is the shared 50/day budget across every free
+    model, so it is the number that decides whether a free chain "allows heavy
+    use". None when there is no token or the payload has no such field.
+    """
+    key = openrouter_key()
+    if not key:
+        return None
+    try:
+        payload = _get_json_http(
+            _OPENROUTER_KEY_URL,
+            {"Authorization": f"Bearer {key}", **_OPENROUTER_HEADERS},
+        )
+    except Exception:  # noqa: BLE001
+        return None
+    pool = (payload.get("data") or {}).get("free_model_daily_requests")
+    if not isinstance(pool, dict):
+        return None
+    return {
+        "used": pool.get("used"),
+        "limit": pool.get("limit"),
+        "remaining": pool.get("remaining"),
+    }
+
+
 def _get_json_http(url, headers):
     req = urllib.request.Request(url, headers=headers)
     with urllib.request.urlopen(req, timeout=30) as resp:
