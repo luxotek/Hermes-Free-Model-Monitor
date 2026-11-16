@@ -142,6 +142,7 @@ class App(tk.Tk):
         self.limits_data = {}
         self._scroll_sync_after_id = None
         self._cfg_fit_after_id = None
+        self._closing = False
         self.palette = dict(theme.FALLBACK_PALETTE)
         self.meta = {}
         self.catalog_meta = {}
@@ -277,8 +278,24 @@ class App(tk.Tk):
             pass
 
     def _on_close(self):
+        self._closing = True
         self._save_geometry()
         self.destroy()
+
+    def _safe_after(self, ms, func, *args):
+        """Schedule a callback on the UI thread from a worker thread.
+
+        `after` is not thread-safe and raises `RuntimeError` once the mainloop
+        has stopped, so a worker that finishes after the window is gone must not
+        print a traceback. Drop the callback instead.
+        """
+        if self._closing:
+            return None
+        try:
+            return self.after(ms, func, *args)
+        except (RuntimeError, tk.TclError):
+            self._closing = True
+            return None
 
     # ---------- theming ----------
 
@@ -1026,7 +1043,7 @@ class App(tk.Tk):
                 except Exception as exc:  # noqa: BLE001
                     # Bind it: Python clears `exc` when the except block ends, so a
                     # bare closure over it raises NameError inside the callback.
-                    self.after(0, lambda e=exc: self._show_error(e))
+                    self._safe_after(0, lambda e=exc: self._show_error(e))
                     return
             if deep:
                 try:
@@ -1045,14 +1062,14 @@ class App(tk.Tk):
             # Paint first, then spend the slow network calls on the limits line.
             # The rate-limit probe is a live completion (~4 s) and the
             # OpenRouter pool another request; neither should hold the panels.
-            self.after(0, lambda: self._show(
+            self._safe_after(0, lambda: self._show(
                 models_out, meta_out, cfg_rows, usage, fb_entries, trouble))
             if deep:
                 try:
                     limits = self._probe_limits(cfg_rows)
                 except Exception:
                     limits = {}
-                self.after(0, lambda: self._render_limits(limits))
+                self._safe_after(0, lambda: self._render_limits(limits))
 
         threading.Thread(target=work, daemon=True).start()
 
@@ -1626,9 +1643,9 @@ class App(tk.Tk):
             try:
                 hermes_state.set_fallbacks(chain)
             except Exception as exc:  # noqa: BLE001
-                self.after(0, lambda e=exc: self._fallback_failed(e))
+                self._safe_after(0, lambda e=exc: self._fallback_failed(e))
                 return
-            self.after(0, lambda: self._fallback_written(note))
+            self._safe_after(0, lambda: self._fallback_written(note))
 
         threading.Thread(target=work, daemon=True).start()
 
