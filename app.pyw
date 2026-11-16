@@ -808,8 +808,6 @@ class App(tk.Tk):
         chips = "   ·   ".join(bits) or "No extra flags reported"
 
         body = extra.get("description") or "No description reported."
-        if len(body) > 320:
-            body = body[:317].rstrip() + "…"
 
         analysis = extra.get("aa") or {}
         scores = "   ·   ".join(
