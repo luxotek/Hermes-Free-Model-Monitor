@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>HFMM — free-model findings &amp; open issues</title>
+<style>
+  body { color: var(--foreground); font-size: 14px; line-height: 1.55; }
+  h1 { font-size: 23px; font-weight: 650; margin: 0 0 2px; letter-spacing: -0.015em; }
+  h2 { font-size: 16px; font-weight: 650; margin: 24px 0 8px; color: var(--accent); }
+  h3 { font-size: 12px; font-weight: 650; margin: 14px 0 6px; color: var(--muted-foreground); text-transform: uppercase; letter-spacing: 0.07em; }
+  p { margin: 6px 0; }
+  .sub { color: var(--muted-foreground); font-size: 13px; margin: 0 0 6px; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 11px; padding: 13px 15px; margin: 10px 0; }
+  .lead { border-left: 3px solid var(--accent); }
+  table { border-collapse: collapse; width: 100%; margin: 8px 0 4px; font-size: 13px; }
+  th, td { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th { color: var(--muted-foreground); font-weight: 600; font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.05em; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  code { background: var(--border); border-radius: 4px; padding: 1px 5px; font-size: 12px; }
+  .ok   { color: #4ade80; }
+  .no   { color: #f87171; }
+  .warn { color: #fbbf24; }
+  .dim  { color: var(--muted-foreground); }
+  ul { margin: 6px 0 6px 18px; padding: 0; }
+  li { margin: 4px 0; }
+  .grid { display: flex; gap: 10px; flex-wrap: wrap; }
+  .kpi { background: var(--card); border: 1px solid var(--border); border-radius: 11px; padding: 11px 15px; min-width: 148px; }
+  .kpi b { display: block; font-size: 21px; font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
+  .kpi span { color: var(--muted-foreground); font-size: 12px; }
+  .check { margin: 7px 0; padding-left: 26px; position: relative; }
+  .check::before { content: "\2610"; position: absolute; left: 0; top: 0; color: var(--accent); font-size: 15px; }
+  .tag { display: inline-block; border: 1px solid var(--border); border-radius: 999px; padding: 1px 8px; font-size: 11.5px; color: var(--muted-foreground); margin-right: 6px; }
+</style>
+</head>
+<body>
+
+<h1>Free models — what the APIs report, and what is still unresolved</h1>
+<p class="sub">Hermes Free Model Monitor &middot; reference page &middot; built from live Nous Portal, Nous inference catalog and OpenRouter responses</p>
+
+<div class="card lead">
+  <h3>The short answer</h3>
+  <p><strong>There is a pool limit, and it is the number that matters for &ldquo;heavy use&rdquo;.</strong>
+  OpenRouter reports <code>free_model_daily_requests: {used: 3, limit: 50, remaining: 47}</code> —
+  <strong>50 free requests per day, shared across every free model</strong>, not per model.
+  A fallback chain of N free models does not multiply that budget; it splits it.</p>
+  <p><strong>The best unused signal is quality.</strong> OpenRouter reports
+  <code>benchmarks.artificial_analysis</code> (<code>intelligence_index</code>, <code>coding_index</code>,
+  <code>agentic_index</code>) — the only thing that answers &ldquo;which of these two is actually better&rdquo;.
+  Only 3 of the 9 free models have it.</p>
+  <p><strong>Everything else useful is a flag, not a number:</strong> provider-side moderation (refusal risk),
+  mandatory vs optional reasoning (wrong tool for aux slots), and whether the free tier is
+  <em>synthesized</em> by Nous rather than offered by the provider.</p>
+</div>
+
+<h2>Open issues to resolve before digging into the data</h2>
+<div class="card">
+  <div class="check"><strong>Pool budget is account-wide.</strong> Decide how to surface it — a status-bar readout (<code>47/50 free requests left today</code>) is the cheap option; a per-model projection is not meaningful because the cap is shared.</div>
+  <div class="check"><strong>Quality scores are sparse.</strong> 3 of 9 free models only. A Scores column would be mostly empty — decide whether a sparse column is worth it, or whether it belongs in the detail panel.</div>
+  <div class="check"><strong>Mandatory-reasoning models.</strong> <code>recursive/flint-v1.0:free</code> and <code>stepfun/step-3.7-flash:free</code> cannot turn reasoning off — poor aux/compaction choices. Needs a visible flag.</div>
+  <div class="check"><strong>Moderation is invisible.</strong> <code>cohere/north-mini-code:free</code> is the only moderated free model; that explains otherwise-mysterious refusals. One-character column.</div>
+  <div class="check"><strong>Synthesized free tiers.</strong> Only <code>upstage/solar-mini4:free</code> and <code>stepfun/step-3.7-flash:free</code> are Nous-generated free variants (<code>synthesizedFreeVariant</code>, 2 of 398 catalog models) rather than the provider&rsquo;s own — a longevity signal worth marking.</div>
+  <div class="check"><strong>Free models mostly live outside the Nous catalog.</strong> Only 3 of the 9 (<code>longcat-2.5</code>, <code>step-3.7-flash</code>, <code>solar-mini4</code>) appear in the 398-model inference catalog; the rest are enriched from OpenRouter and the portal list. So catalog-only fields are sparse for free models by construction.</div>
+  <div class="check"><strong>Stop looking for per-model rate limits — they do not exist.</strong> OR&rsquo;s <code>rate_limit</code> is marked deprecated. The only real flakiness signal is your own <code>agent.log</code> (429s, fallback fires).</div>
+  <div class="check"><strong>Dead fields.</strong> <code>per_request_limits</code> is null in 398 of 398 catalog models, and <code>knowledge_cutoff</code> / <code>frontier</code> are empty for every free model. Do not build columns on them.</div>
+</div>
+
+<h2>Per-model decision data</h2>
+<p class="sub">All nine permanent-free models. Green = reported for that model; &ndash; = not reported.</p>
+<table>
+  <thead>
+    <tr>
+      <th>Model</th><th class="num">Output</th><th>Released</th>
+      <th>Moderated</th><th>Reasoning</th>
+      <th class="num">AA intel</th><th class="num">AA coding</th><th class="num">AA agentic</th>
+      <th>Free tier</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr><td><code>cohere/north-mini-code:free</code></td><td class="num">64,000</td><td>2026-06-17</td><td class="warn">yes</td><td>optional</td><td class="num">3.4</td><td class="num">36.5</td><td class="num">1.1</td><td class="dim">provider</td></tr>
+    <tr><td><code>google/gemma-4-26b-a4b-it:free</code></td><td class="num">32,768</td><td>2026-04-03</td><td class="ok">no</td><td>optional</td><td class="num dim">&ndash;</td><td class="num">39.3</td><td class="num">2.9</td><td class="dim">provider</td></tr>
+    <tr><td><code>google/gemma-4-31b-it:free</code></td><td class="num">32,768</td><td>2026-04-02</td><td class="ok">no</td><td>optional</td><td class="num">4.4</td><td class="num">43.4</td><td class="num">4.2</td><td class="dim">provider</td></tr>
+    <tr><td><code>inclusionai/ling-3.2-flash:free</code></td><td class="num">262,144</td><td>2026-11-13</td><td class="ok">no</td><td>default-on</td><td class="num dim">&ndash;</td><td class="num dim">&ndash;</td><td class="num dim">&ndash;</td><td class="dim">provider</td></tr>
+    <tr><td><code>meituan/longcat-2.5:free</code></td><td class="num">131,072</td><td>2026-11-02</td><td class="dim">&ndash;</td><td class="dim">&ndash;</td><td class="num dim">&ndash;</td><td class="num dim">&ndash;</td><td class="num dim">&ndash;</td><td class="dim">provider</td></tr>
+    <tr><td><code>openrouter/free</code></td><td class="num dim">?</td><td>2026-02-01</td><td class="ok">no</td><td class="dim">&ndash;</td><td class="num dim">&ndash;</td><td class="num dim">&ndash;</td><td class="num dim">&ndash;</td><td class="dim">router</td></tr>
+    <tr><td><code>recursive/flint-v1.0:free</code></td><td class="num">235,929</td><td>2026-10-21</td><td class="ok">no</td><td class="warn">mandatory</td><td class="num dim">&ndash;</td><td class="num dim">&ndash;</td><td class="num dim">&ndash;</td><td class="dim">provider</td></tr>
+    <tr><td><code>stepfun/step-3.7-flash:free</code></td><td class="num">256,000</td><td>2026-05-28</td><td class="ok">no</td><td class="warn">mandatory</td><td class="num dim">&ndash;</td><td class="num dim">&ndash;</td><td class="num dim">&ndash;</td><td class="warn">synthesized</td></tr>
+    <tr><td><code>upstage/solar-mini4:free</code></td><td class="num">131,072</td><td>2026-09-23</td><td class="ok">no</td><td>optional</td><td class="num dim">&ndash;</td><td class="num dim">&ndash;</td><td class="num dim">&ndash;</td><td class="warn">synthesized</td></tr>
+  </tbody>
+</table>
+<p class="sub">
+  <span class="dim">Output</span> = max completion tokens per response &middot;
+  <span class="dim">Moderated</span> = provider runs content moderation &middot;
+  <span class="dim">AA</span> = Artificial Analysis index &middot;
+  <span class="dim">synthesized</span> = Nous <code>synthesizedFreeVariant</code>.
+</p>
+
+<h2>Account-level limits (OpenRouter)</h2>
+<div class="grid">
+  <div class="kpi"><b>50</b><span>free requests / day, shared pool</span></div>
+  <div class="kpi"><b>47</b><span>remaining right now</span></div>
+  <div class="kpi"><b>100</b><span>USD key budget, none spent</span></div>
+  <div class="kpi"><b>2027-05-14</b><span>key expiry</span></div>
+</div>
+
+<h2>Field inventory &amp; coverage</h2>
+<p class="sub">Nous inference catalog, 398 models. &ldquo;Free&rdquo; = populated for at least one of the nine.</p>
+<table>
+  <thead><tr><th>Field</th><th>Reported for</th><th>Free</th><th>Verdict</th></tr></thead>
+  <tbody>
+    <tr><td><code>context_length</code></td><td>398 / 398</td><td class="ok">all</td><td>Context column &middot; done</td></tr>
+    <tr><td><code>top_provider.max_completion_tokens</code></td><td>398 / 398</td><td class="ok">8 of 9</td><td>Output column &middot; done</td></tr>
+    <tr><td><code>created</code></td><td>398 / 398</td><td class="ok">9 of 9</td><td>Released column &middot; done</td></tr>
+    <tr><td><code>architecture.input_modalities</code></td><td>398 / 398</td><td class="ok">all</td><td>Inputs column &middot; done</td></tr>
+    <tr><td><code>expiration_date</code></td><td>5 / 398</td><td class="ok">1</td><td>Temp column &middot; done</td></tr>
+    <tr><td><code>benchmarks.artificial_analysis</code></td><td>OpenRouter only</td><td class="warn">3 of 9</td><td><b>Best quality signal</b> &middot; decide</td></tr>
+    <tr><td><code>top_provider.is_moderated</code></td><td>OpenRouter + catalog</td><td class="warn">most</td><td><b>Worth a flag</b> &middot; decide</td></tr>
+    <tr><td><code>reasoning</code></td><td>289 / 398</td><td class="warn">7 of 9</td><td><b>Worth a flag</b> &middot; decide</td></tr>
+    <tr><td><code>synthesizedFreeVariant</code></td><td>2 / 398</td><td class="warn">2 of 9</td><td>Longevity hint &middot; decide</td></tr>
+    <tr><td><code>supported_parameters</code></td><td>361 / 398</td><td class="ok">all</td><td>Near-universal &middot; skip</td></tr>
+    <tr><td><code>endpoints</code></td><td>356 / 398</td><td class="warn">6 of 9</td><td>Edge case &middot; skip</td></tr>
+    <tr><td><code>hugging_face_id</code> / <code>aliases</code></td><td>151 / 392</td><td class="warn">5 of 9</td><td>Detail panel only</td></tr>
+    <tr><td><code>canonical_slug</code></td><td>398 / 398</td><td class="ok">all</td><td>Duplicates Released &middot; skip</td></tr>
+    <tr><td><code>knowledge_cutoff</code></td><td>94 / 398</td><td class="no">0 of 9</td><td>Not for free models</td></tr>
+    <tr><td><code>frontier</code></td><td>45 / 398</td><td class="no">0 of 9</td><td>Paid-model flag only</td></tr>
+    <tr><td><code>default_parameters</code></td><td>216 / 398</td><td class="warn">3 of 9</td><td>Mostly nulls &middot; skip</td></tr>
+    <tr><td><code>per_request_limits</code></td><td>0 / 398</td><td class="no">0</td><td>Never populated &middot; dead field</td></tr>
+  </tbody>
+</table>
+
+<h2>Not reported anywhere</h2>
+<ul>
+  <li><strong>Per-model rate limits</strong> (RPM / TPM) &mdash; only the shared 50/day pool exists.</li>
+  <li><strong>Per-model request caps</strong> or throttle flags.</li>
+  <li><strong>Latency / throughput</strong> &mdash; no tokens-per-second in any payload.</li>
+  <li><strong>Deprecation schedule</strong> beyond <code>expiration_date</code> (5 models total, 1 free).</li>
+  <li><strong>Live health</strong> &mdash; nothing says &ldquo;this model is flaking right now&rdquo;; only your own logs do.</li>
+</ul>
+
+<h2>Decision tree this suggests</h2>
+<div class="card">
+  <h3>Main model</h3>
+  <p>Output &ge; 64k &middot; Released &ge; 6 months ago &middot; reasoning optional &middot; not moderated &middot; highest AA coding / agentic available.</p>
+  <h3>Fallback</h3>
+  <p>Same filters, but weight <strong>Released</strong> hardest — an older model is far less likely to vanish and leave a dead slot. Keep Output &ge; 32k so it can finish a real task.</p>
+  <h3>Auxiliary (vision / compaction)</h3>
+  <p>Filter on Flags, then prefer the largest Output and oldest Released.</p>
+  <h3>Heavy use</h3>
+  <p>The 50/day pool is shared, so more free models in the chain means more variety, not more volume. Rotate for coverage, not for capacity.</p>
+</div>
+
+<h2>Suggested next columns</h2>
+<table>
+  <thead><tr><th>Column</th><th>Source</th><th>Why</th><th>Cost</th></tr></thead>
+  <tbody>
+    <tr><td><b>Pool</b></td><td>OR <code>/api/v1/key</code></td><td>The real &ldquo;heavy use&rdquo; ceiling, in the status bar</td><td>1 request per refresh</td></tr>
+    <tr><td><b>Scores</b></td><td>OR <code>benchmarks.artificial_analysis</code></td><td>Turns &ldquo;which of these two&rdquo; into a number</td><td>1 call per refresh, 3 of 9 filled</td></tr>
+    <tr><td><b>Moderated</b></td><td>OR <code>top_provider.is_moderated</code></td><td>Explains mysterious refusals; one character wide</td><td>Already fetched</td></tr>
+    <tr><td><b>Reasoning</b></td><td><code>reasoning.mandatory</code></td><td>Mandatory reasoning is wrong for aux slots</td><td>Already fetched</td></tr>
+  </tbody>
+</table>
+
+<p class="sub">
+  <span class="tag">HFMM-beta</span>
+  <span class="tag">reference</span>
+  Reference page for decisions &middot; generated from live API responses.
+</p>
+
+</body>
+</html>

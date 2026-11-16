@@ -89,6 +89,33 @@ def _merge_inputs(*values):
     return ", ".join(_normalize_inputs(joined))
 
 
+def _catalog_extra(model):
+    """Reported facts that are too wide for a column but help on selection."""
+    provider = model.get("top_provider") or {}
+    reasoning = model.get("reasoning")
+    if isinstance(reasoning, dict):
+        if reasoning.get("mandatory"):
+            reason_text = "mandatory"
+        elif reasoning.get("default_enabled"):
+            reason_text = "default-on"
+        else:
+            reason_text = "optional"
+    else:
+        reason_text = ""
+    analysis = ((model.get("benchmarks") or {}).get("artificial_analysis") or {})
+    return {
+        "description": (model.get("description") or "").strip(),
+        "moderated": provider.get("is_moderated"),
+        "reasoning": reason_text,
+        "aa": {key: analysis.get(key) for key in
+                ("intelligence_index", "coding_index", "agentic_index")},
+        "hf": model.get("hugging_face_id"),
+        "slug": model.get("canonical_slug"),
+        "synthesized": bool(model.get("synthesizedFreeVariant")),
+        "cutoff": model.get("knowledge_cutoff"),
+    }
+
+
 def _catalog_info(model):
     """Context / modality facts for any catalog entry, free or paid."""
     arch = model.get("architecture") or {}
@@ -103,6 +130,7 @@ def _catalog_info(model):
         "end": model.get("expiration_date") or "",
         "output": (model.get("top_provider") or {}).get("max_completion_tokens"),
         "created": model.get("created"),
+        "extra": _catalog_extra(model),
     }
 
 
@@ -226,6 +254,7 @@ def fetch_free_models(permanent_only=True):
         record.setdefault("end", "")
         record.setdefault("output", None)
         record.setdefault("created", None)
+        record.setdefault("extra", None)
         existing = by_name.get(name)
         if existing is None:
             merged = dict(record, sources={source})
@@ -247,6 +276,13 @@ def fetch_free_models(permanent_only=True):
             existing["output"] = record["output"]
         if not existing["created"]:
             existing["created"] = record["created"]
+        extra = record.get("extra")
+        if extra:
+            target = existing.get("extra") or {}
+            for key, value in extra.items():
+                if not target.get(key) and value not in (None, "", [], {}):
+                    target[key] = value
+            existing["extra"] = target
 
     for rec in portal.get("freeRecommendedModels") or []:
         slug = rec.get("modelName")
@@ -264,6 +300,7 @@ def fetch_free_models(permanent_only=True):
                 "compaction": bool(rec.get("isCompactionModel")),
                 "output": catalog_hit.get("output"),
                 "created": catalog_hit.get("created"),
+                "extra": catalog_hit.get("extra"),
             },
             "portal",
         )
@@ -284,6 +321,7 @@ def fetch_free_models(permanent_only=True):
                 "compaction": bool(rec.get("isCompactionModel")),
                 "output": catalog_hit.get("output"),
                 "created": catalog_hit.get("created"),
+                "extra": catalog_hit.get("extra"),
             },
             "portal",
         )
@@ -341,6 +379,7 @@ def fetch_free_models(permanent_only=True):
         info.setdefault("end", rec.get("end"))
         info.setdefault("output", rec.get("output"))
         info.setdefault("created", rec.get("created"))
+        info.setdefault("extra", rec.get("extra"))
 
     if permanent_only:
         results = [r for r in results if not r.get("temp") and not r.get("end")]

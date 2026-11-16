@@ -329,9 +329,19 @@ class App(tk.Tk):
         self.detail_title.pack(fill="x")
         self.detail_chips = tk.Label(
             inner, text="", bg=p["card"], fg=p["fg"], font=(FONT, SZ_INFO),
-            anchor="w", justify="left", padx=12, pady=4,
+            anchor="w", justify="left", padx=12, pady=3,
         )
         self.detail_chips.pack(fill="x")
+        self.detail_body = tk.Label(
+            inner, text="", bg=p["card"], fg=p["fg"], font=(FONT, SZ_INFO - 1),
+            anchor="w", justify="left", padx=12, pady=1,
+        )
+        self.detail_body.pack(fill="x")
+        self.detail_scores = tk.Label(
+            inner, text="", bg=p["card"], fg=p["dim"], font=(FONT, SZ_INFO - 1),
+            anchor="w", justify="left", padx=12, pady=6,
+        )
+        self.detail_scores.pack(fill="x")
 
     def _build_catalog_tab(self, parent):
         wrap = tk.Frame(parent, bg=self._c("bg"))
@@ -695,6 +705,42 @@ class App(tk.Tk):
         return "-"
 
     @staticmethod
+    def _model_detail(info, extra_bits=None, lifecycle=False):
+        """Facts for the detail panel that are not already columns."""
+        extra = (info or {}).get("extra") or {}
+        bits = list(extra_bits or [])
+        if extra.get("moderated") is True:
+            bits.append("moderated")
+        reasoning = extra.get("reasoning")
+        if reasoning:
+            bits.append({"mandatory": "reasoning mandatory",
+                          "default-on": "reasoning default-on"}.get(
+                              reasoning, "reasoning optional"))
+        if extra.get("synthesized"):
+            bits.append("synthesized free tier")
+        if extra.get("cutoff"):
+            bits.append(f"cutoff {extra['cutoff']}")
+        if extra.get("hf"):
+            bits.append(f"hf {extra['hf']}")
+        if lifecycle:
+            marker = App._temp_text(info)
+            if marker != "-":
+                bits.append(marker)
+        chips = "   ·   ".join(bits) or "No extra flags reported"
+
+        body = extra.get("description") or "No description reported."
+        if len(body) > 320:
+            body = body[:317].rstrip() + "…"
+
+        analysis = extra.get("aa") or {}
+        scores = "   ·   ".join(
+            f"{key.replace('_index', '')} {analysis[key]}"
+            for key in ("intelligence_index", "coding_index", "agentic_index")
+            if analysis.get(key) is not None
+        )
+        return chips, body, (f"AA   {scores}" if scores else "")
+
+    @staticmethod
     def _released_text(info):
         """Release date from the catalog's `created` timestamp."""
         ts = info.get("created")
@@ -863,26 +909,36 @@ class App(tk.Tk):
         title = ""
         chips = ""
         color = None
+        chips = body = scores = ""
         if tree is self.tree:
             self.selected_slug = values[0]
+            info = next((m for m in self.models if m["name"] == values[0]), None)
             title = values[0]
-            chips = (f"Context {values[1]}   ·   Inputs {values[2]}   ·   Output {values[3]}"
-                     f"   ·   Released {values[4]}   ·   Flags {values[5]}"
-                     f"   ·   Source {values[6]}")
+            chips, body, scores = self._model_detail(info, lifecycle=True)
         elif tree is self.tree2:
             self.selected_slug = values[1]
             status = values[6].lower()
             color = {"free": self._c("ok"), "paid": self._c("warn"), "missing": self._c("error")}.get(status)
             title = f"{values[0]}  →  {values[1]}"
-            chips = (f"Provider {values[2]}   ·   Context {values[3]}   ·   Flags {values[4]}"
-                     f"   ·   Temp {values[5]}   ·   Status {values[6]}   ·   {values[7]}")
+            note = values[7]
+            chips, body, scores = self._model_detail(
+                self._model_info(values[1]), extra_bits=[f"status {status}"])
+            if note and note != "-":
+                body = f"{body}\n{note}"
 
         if hasattr(self, "detail_title"):
             self.detail_title.configure(
                 text=title or "Select a row to see its full details.",
                 fg=color if color else (self._c("fg") if title else self._c("dim")),
             )
-            self.detail_chips.configure(text=chips, wraplength=max(self.winfo_width() - 48, 320))
+            width = max(self.winfo_width() - 48, 320)
+            self.detail_chips.configure(text=chips, wraplength=width)
+            for label, text in ((self.detail_body, body), (self.detail_scores, scores)):
+                label.configure(text=text, wraplength=width)
+                if text:
+                    label.pack(fill="x")
+                else:
+                    label.pack_forget()
         if self.set_main_btn is not None:
             self.set_main_btn.state(["!disabled"])
 
