@@ -4,32 +4,33 @@
 <meta charset="utf-8">
 <title>HFMM — free-model findings &amp; open issues</title>
 <style>
-  body { color: var(--foreground); font-size: 14px; line-height: 1.55; }
-  h1 { font-size: 23px; font-weight: 650; margin: 0 0 2px; letter-spacing: -0.015em; }
-  h2 { font-size: 16px; font-weight: 650; margin: 24px 0 8px; color: var(--accent); }
-  h3 { font-size: 12px; font-weight: 650; margin: 14px 0 6px; color: var(--muted-foreground); text-transform: uppercase; letter-spacing: 0.07em; }
+  /* Always dark: the preview pane's own theme must not bleed through. */
+  body { background: #0d1117; color: #e6edf3; font-size: 14px; line-height: 1.55; }
+  h1 { font-size: 23px; font-weight: 650; margin: 0 0 2px; letter-spacing: -0.015em; color: #e6edf3; }
+  h2 { font-size: 16px; font-weight: 650; margin: 24px 0 8px; color: #58a6ff; }
+  h3 { font-size: 12px; font-weight: 650; margin: 14px 0 6px; color: #8b949e; text-transform: uppercase; letter-spacing: 0.07em; }
   p { margin: 6px 0; }
-  .sub { color: var(--muted-foreground); font-size: 13px; margin: 0 0 6px; }
-  .card { background: var(--card); border: 1px solid var(--border); border-radius: 11px; padding: 13px 15px; margin: 10px 0; }
-  .lead { border-left: 3px solid var(--accent); }
+  .sub { color: #8b949e; font-size: 13px; margin: 0 0 6px; }
+  .card { background: #161b22; border: 1px solid #30363d; border-radius: 11px; padding: 13px 15px; margin: 10px 0; }
+  .lead { border-left: 3px solid #58a6ff; }
   table { border-collapse: collapse; width: 100%; margin: 8px 0 4px; font-size: 13px; }
-  th, td { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
-  th { color: var(--muted-foreground); font-weight: 600; font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.05em; }
+  th, td { text-align: left; padding: 6px 10px; border-bottom: 1px solid #30363d; vertical-align: top; }
+  th { color: #8b949e; font-weight: 600; font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.05em; }
   td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
-  code { background: var(--border); border-radius: 4px; padding: 1px 5px; font-size: 12px; }
-  .ok   { color: #4ade80; }
-  .no   { color: #f87171; }
-  .warn { color: #fbbf24; }
-  .dim  { color: var(--muted-foreground); }
+  code { background: #21262d; color: #e6edf3; border-radius: 4px; padding: 1px 5px; font-size: 12px; }
+  .ok   { color: #3fb950; }
+  .no   { color: #f85149; }
+  .warn { color: #d29922; }
+  .dim  { color: #8b949e; }
   ul { margin: 6px 0 6px 18px; padding: 0; }
   li { margin: 4px 0; }
   .grid { display: flex; gap: 10px; flex-wrap: wrap; }
-  .kpi { background: var(--card); border: 1px solid var(--border); border-radius: 11px; padding: 11px 15px; min-width: 148px; }
-  .kpi b { display: block; font-size: 21px; font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
-  .kpi span { color: var(--muted-foreground); font-size: 12px; }
+  .kpi { background: #161b22; border: 1px solid #30363d; border-radius: 11px; padding: 11px 15px; min-width: 148px; }
+  .kpi b { display: block; font-size: 21px; font-variant-numeric: tabular-nums; letter-spacing: -0.01em; color: #e6edf3; }
+  .kpi span { color: #8b949e; font-size: 12px; }
   .check { margin: 7px 0; padding-left: 26px; position: relative; }
-  .check::before { content: "\2610"; position: absolute; left: 0; top: 0; color: var(--accent); font-size: 15px; }
-  .tag { display: inline-block; border: 1px solid var(--border); border-radius: 999px; padding: 1px 8px; font-size: 11.5px; color: var(--muted-foreground); margin-right: 6px; }
+  .check::before { content: "\2610"; position: absolute; left: 0; top: 0; color: #58a6ff; font-size: 15px; }
+  .tag { display: inline-block; border: 1px solid #30363d; border-radius: 999px; padding: 1px 8px; font-size: 11.5px; color: #8b949e; margin-right: 6px; }
 </style>
 </head>
 <body>
