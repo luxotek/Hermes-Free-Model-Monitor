@@ -28,9 +28,6 @@ WIDTHS = {"Model": 360, "Context": 110, "Inputs": 160, "Output": 110,
           "Released": 110, "Flags": 200, "Source": 120}
 CFG_COLS = ("Role", "Model", "Status", "Last error", "Calls")
 CFG_WIDTHS = {"Role": 130, "Model": 250, "Status": 250, "Last error": 300, "Calls": 50}
-# Per-column ceilings for the content-sized fit: the error cell carries a date,
-# a label and a retry delay, so it needs room the free tab's columns do not.
-CFG_CAPS = {"Role": 200, "Model": 380, "Status": 340, "Last error": 420, "Calls": 90}
 
 SZ_INFO = 14
 SZ_POPUP = 14        # Additional info popup body
@@ -87,6 +84,7 @@ class App(tk.Tk):
         self.trouble_data = {}
         self.limits_data = {}
         self._scroll_sync_after_id = None
+        self._cfg_fit_after_id = None
         self.palette = dict(theme.FALLBACK_PALETTE)
         self.meta = {}
         self.catalog_meta = {}
@@ -189,10 +187,12 @@ class App(tk.Tk):
             relief="flat", font=("Segoe UI Semibold", SZ_HEAD), padding=(8, 6),
         )
         # The config table carries its own style so its single-line rows and
-        # tag colours never leak into the free tab's Treeview.
+        # tag colours never leak into the free tab's Treeview. Rows are a
+        # little tighter than the free tab's so the whole chain fits the panel
+        # without a vertical scrollbar.
         style.configure(
             "Cfg.Treeview", background=p["card"], foreground=p["fg"],
-            fieldbackground=p["card"], borderwidth=0, rowheight=38,
+            fieldbackground=p["card"], borderwidth=0, rowheight=34,
             font=(FONT, SZ_TREE),
         )
         style.configure(
@@ -412,12 +412,11 @@ class App(tk.Tk):
         for col in CFG_COLS:
             self.tree2.heading(col, text=col, anchor="w")
             self.tree2.column(col, width=CFG_WIDTHS[col], anchor="w")
-        # Scrollbars before the tree, for the same pack-order reason as the
-        # free tab.
-        self.tree2_vscroll = ttk.Scrollbar(inner, orient="vertical", command=self.tree2.yview)
-        self.tree2_vscroll.pack(side="right", fill="y")
-        self.tree2_hscroll = ttk.Scrollbar(inner, orient="horizontal", command=self.tree2.xview)
-        self.tree2_hscroll.pack(side="bottom", fill="x")
+        # No scrollbars on this tab: the columns are sized to the panel (see
+        # _fit_config_columns), so there is nothing to scroll sideways, and the
+        # chain is short enough to fit vertically.
+        self.tree2_hscroll = None
+        self.tree2_vscroll = None
         self.tree2.pack(side="left", fill="both", expand=True)
         self.tree2.bind("<Double-1>", lambda _e: self.copy_row(self.tree2))
         self.tree2.bind("<Button-1>", self._on_cfg_press)
@@ -425,6 +424,7 @@ class App(tk.Tk):
         self.tree2.bind("<ButtonRelease-1>", self._on_cfg_release)
         self.tree2.bind("<Motion>", self._on_cfg_hover)
         self.tree2.bind("<Button-3>", self._on_cfg_rclick)
+        self.tree2.bind("<Configure>", self._on_cfg_configure, add="+")
 
         self.tree2.tag_configure("free", foreground=p["ok"])
         self.tree2.tag_configure("paid", foreground=p["warn"])
@@ -433,13 +433,6 @@ class App(tk.Tk):
         # item, not one cell, and the status stays readable as text.
         self.tree2.tag_configure("temp", foreground=p["warn"])
         self.tree2.tag_configure("dragging", background=p["accent"], foreground=p["fg"])
-
-        self.tree2_vscroll = ttk.Scrollbar(inner, orient="vertical", command=self.tree2.yview)
-        self.tree2_vscroll.pack(side="right", fill="y")
-        self.tree2_hscroll = ttk.Scrollbar(inner, orient="horizontal", command=self.tree2.xview)
-        self.tree2_hscroll.pack(side="bottom", fill="x")
-        self.tree2.configure(yscrollcommand=self.tree2_vscroll.set, xscrollcommand=self.tree2_hscroll.set)
-        self.tree2.bind("<Configure>", self._on_tree_configure, add="+")
 
     def _build_status(self):
         self.status = tk.Label(
@@ -730,7 +723,7 @@ class App(tk.Tk):
 
     # ---------- column fitting ----------
 
-    def _autofit_columns(self, tree, hscroll, vscroll=None, caps=None):
+    def _autofit_columns(self, tree, hscroll, vscroll=None):
         """Size each column to its own widest cell; scroll rather than wrap."""
         font = self._measure_font
         for index, col in enumerate(tree["columns"]):
@@ -739,8 +732,8 @@ class App(tk.Tk):
                 values = tree.item(item)["values"]
                 if index < len(values):
                     width = max(width, font.measure(str(values[index])) + 24)
-            cap = (caps or {}).get(col, 460 if col == "Model" else 300)
-            tree.column(col, width=min(max(width, 64), cap), stretch=False)
+            tree.column(col, width=min(max(width, 64), 460 if col == "Model" else 300),
+                        stretch=False)
         tree.update_idletasks()
         self._sync_hscroll(tree, hscroll)
         if vscroll is not None:
@@ -777,14 +770,43 @@ class App(tk.Tk):
         else:
             vscroll.pack_forget()
 
+    def _fit_config_columns(self):
+        """Size the config columns to the panel, so the tab never scrolls.
+
+        Content-sized when they fit, proportionally squeezed when they do not:
+        the table always spans exactly the panel instead of overflowing it.
+        """
+        tree = self.tree2
+        avail = tree.winfo_width() - 2
+        if avail <= 1:
+            return  # not laid out yet; <Configure> re-fits
+        font = self._measure_font
+        widths = []
+        for index, col in enumerate(tree["columns"]):
+            width = font.measure(str(tree.heading(col)["text"])) + 24
+            for item in tree.get_children():
+                values = tree.item(item)["values"]
+                if index < len(values):
+                    width = max(width, font.measure(str(values[index])) + 24)
+            widths.append(max(width, 64))
+        total = sum(widths)
+        if total > avail:
+            widths = [max(int(round(w * avail / total)), 40) for w in widths]
+        for col, width in zip(tree["columns"], widths):
+            tree.column(col, width=width, stretch=False)
+        tree.update_idletasks()
+
+    def _on_cfg_configure(self, _event=None):
+        """Re-fit after a resize; the immediate pass can see a stale width."""
+        self._fit_config_columns()
+        if self._cfg_fit_after_id:
+            self.after_cancel(self._cfg_fit_after_id)
+        self._cfg_fit_after_id = self.after(120, self._fit_config_columns)
+
     def _on_tree_configure(self, event):
         """Scrollbars follow the panel; re-checked once layout has settled."""
-        if event.widget is self.tree2:
-            self._sync_vscroll(self.tree2, self.tree2_vscroll)
-            self._sync_hscroll(self.tree2, self.tree2_hscroll)
-        else:
-            self._sync_vscroll(self.tree, self.tree_vscroll)
-            self._sync_hscroll(self.tree, self.tree_hscroll)
+        self._sync_vscroll(self.tree, self.tree_vscroll)
+        self._sync_hscroll(self.tree, self.tree_hscroll)
         self._schedule_scroll_sync()
 
     def _schedule_scroll_sync(self):
@@ -1139,8 +1161,7 @@ class App(tk.Tk):
                 ["Nothing returned for model.default, auxiliary pins, or fallbacks.",
                  "Tip: anything pinned here is classified FREE / PAID / MISSING."],
             )
-        self._autofit_columns(self.tree2, self.tree2_hscroll, self.tree2_vscroll,
-                              caps=CFG_CAPS)
+        self._fit_config_columns()
 
     def _render_limits(self, limits):
         """The account's live ceilings: Nous fair-share bucket + OpenRouter pool."""

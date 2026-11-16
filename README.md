@@ -40,9 +40,12 @@ Double-click **`run.ps1`** (right-click > Run with PowerShell) or **`run.cmd`**.
   model that has never failed reads `No error`. **Calls** is that slug's `API call #N`
   count. Lifecycle, failover, provider and source live in the Additional-info
   popup rather than in extra columns.
-- **Columns are sized to their content**: each column fits its own widest cell,
-  nothing wraps, and if the table is wider than the panel a horizontal scrollbar
-  appears instead of squeezing. Resizing the window re-checks both scrollbars.
+- **Columns fit the panel.** The free tab sizes each column to its own widest
+  cell and shows a horizontal scrollbar when the table overflows. The config
+  tab has **no scrollbars**: its columns are content-sized when they fit and
+  proportionally squeezed when they do not, so the table always spans the panel
+  exactly, and its rows are slightly tighter so the whole chain fits vertically.
+  Nothing wraps on either tab.
 - **Footer, top to bottom**: tabs → *Additional info* button → free-tier limits
   (`Nous free tier: 48/50 requests · resets in 53s · OpenRouter free pool:
   50/50 today` — the Nous half from the `x-ratelimit-*` response headers via one
