@@ -274,6 +274,7 @@ class App(tk.Tk):
         self._build_toolbar()
         self._build_notebook()
         self._build_info_bar()
+        self._build_usage_bar()
         self._build_status()
 
     def _build_toolbar(self):
@@ -326,6 +327,15 @@ class App(tk.Tk):
         self.info_btn.pack(side="right")
         self.info_btn.state(["disabled"])
 
+    def _build_usage_bar(self):
+        # Bottom of the window, outside the tab panel, just above the status
+        # line: recent per-model API call counts from logs/agent.log.
+        self.usage = tk.Label(
+            self, text="Recent API calls: ...", bg=self._c("bg"), fg=self._c("dim"),
+            font=(FONT, SZ_INFO), anchor="w",
+        )
+        self.usage.pack(fill="x", padx=16, pady=(2, 0))
+
     def _build_catalog_tab(self, parent):
         wrap = tk.Frame(parent, bg=self._c("bg"))
         wrap.pack(fill="both", expand=True, padx=0, pady=(2, 0))
@@ -353,12 +363,6 @@ class App(tk.Tk):
         p = self.palette
         wrap = tk.Frame(parent, bg=p["bg"])
         wrap.pack(fill="both", expand=True)
-
-        self.usage = tk.Label(
-            wrap, text="Recent API calls: ...", bg=p["bg"], fg=p["dim"],
-            font=(FONT, SZ_INFO), anchor="w",
-        )
-        self.usage.pack(fill="x", padx=6, pady=(4, 2))
 
         inner = tk.Frame(wrap, bg=p["bg"])
         inner.pack(fill="both", expand=True)
