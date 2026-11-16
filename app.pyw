@@ -32,6 +32,13 @@ CFG_WIDTHS = {
     "Role": 130, "Model": 200, "Status": 74, "Notes": 160,
     "Temp": 150, "Last error": 205, "Fallback": 340, "Calls": 56,
 }
+# Columns size themselves to their content (plus CFG_PAD of slack), so a wide
+# window gives snug one-line cells and a narrow one scales them down and wraps.
+CFG_PAD = 16
+CFG_MIN = {"Role": 58, "Model": 104, "Status": 50, "Notes": 64,
+           "Temp": 60, "Last error": 78, "Fallback": 96, "Calls": 36}
+CFG_MAX = {"Role": 210, "Model": 380, "Status": 92, "Notes": 280,
+           "Temp": 190, "Last error": 280, "Fallback": 400, "Calls": 90}
 
 SZ_INFO = 14
 SZ_POPUP = 14        # Additional info popup body
@@ -87,6 +94,8 @@ class App(tk.Tk):
         self.usage_data = {"counts": {}, "fallbacks": [], "last": None}
         self.trouble_data = {}
         self.limits_data = {}
+        self._cfg_raw = {}
+        self._refit_after_id = None
         self.palette = dict(theme.FALLBACK_PALETTE)
         self.meta = {}
         self.catalog_meta = {}
@@ -244,6 +253,11 @@ class App(tk.Tk):
             self._insert(model)
         self._render_config(self.cfg_rows, self.usage_data,
                             self.trouble_data, self.limits_data)
+        if hasattr(self, "tree2") and hasattr(self.tree2, "winfo_exists"):
+            try:
+                self._fit_config()
+            except tk.TclError:
+                pass
         if hasattr(self, "tree") and hasattr(self.tree_hscroll, "winfo_exists"):
             self._autofit_columns(self.tree, self.tree_hscroll, self.tree_vscroll)
 
@@ -298,9 +312,13 @@ class App(tk.Tk):
             widget.destroy()
         self._build_toolbar()
         self._build_notebook()
-        self._build_info_bar()
-        self._build_usage_bar()
+        # The footer packs from the bottom up so it always reserves its space;
+        # packed after the notebook at the default side, the notebook's request
+        # could claim the whole window and overlap these lines on short ones.
         self._build_status()
+        self._build_usage_bar()
+        self._build_limits_bar()
+        self._build_info_bar()
 
     def _build_toolbar(self):
         p = self.palette
@@ -346,20 +364,29 @@ class App(tk.Tk):
     def _build_info_bar(self):
         p = self.palette
         bar = tk.Frame(self, bg=p["bg"])
-        bar.pack(fill="x", padx=14, pady=(2, 0))
+        bar.pack(side="bottom", fill="x", padx=14, pady=(2, 0))
         self.info_btn = ttk.Button(bar, text="Additional info",
                                    command=self.open_model_info)
         self.info_btn.pack(side="right")
         self.info_btn.state(["disabled"])
 
     def _build_usage_bar(self):
-        # Bottom of the window, outside the tab panel, just above the status
-        # line: recent per-model API call counts from logs/agent.log.
+        # Bottom of the window, outside the tab panel: recent per-model API call
+        # counts from logs/agent.log.
         self.usage = tk.Label(
             self, text="Recent API calls: ...", bg=self._c("bg"), fg=self._c("dim"),
             font=(FONT, SZ_INFO), anchor="w",
         )
-        self.usage.pack(fill="x", padx=16, pady=(2, 0))
+        self.usage.pack(side="bottom", fill="x", padx=16, pady=(2, 4))
+
+    def _build_limits_bar(self):
+        # The account's live ceilings, also below the panel so they read as
+        # window-level facts rather than belonging to one tab.
+        self.limits = tk.Label(
+            self, text="Free-tier limits unknown — hit Refresh",
+            bg=self._c("bg"), fg=self._c("accent"), font=(FONT, SZ_INFO), anchor="w",
+        )
+        self.limits.pack(side="bottom", fill="x", padx=16, pady=(2, 0))
 
     def _build_catalog_tab(self, parent):
         wrap = tk.Frame(parent, bg=self._c("bg"))
@@ -389,12 +416,6 @@ class App(tk.Tk):
         wrap = tk.Frame(parent, bg=p["bg"])
         wrap.pack(fill="both", expand=True)
 
-        self.limits = tk.Label(
-            wrap, text="Free-tier limits unknown — hit Refresh",
-            bg=p["bg"], fg=p["dim"], font=(FONT, SZ_INFO), anchor="w",
-        )
-        self.limits.pack(fill="x", padx=6, pady=(2, 0))
-
         inner = tk.Frame(wrap, bg=p["bg"])
         inner.pack(fill="both", expand=True)
 
@@ -423,7 +444,7 @@ class App(tk.Tk):
         self.tree2.configure(yscrollcommand=self.tree2_vscroll.set, xscrollcommand=self.tree2_hscroll.set)
         self.tree2.bind(
             "<Configure>",
-            lambda _e: self._sync_vscroll(self.tree2, self.tree2_vscroll),
+            lambda _e: (self._schedule_refit(), self._sync_vscroll(self.tree2, self.tree2_vscroll)),
             add="+",
         )
 
@@ -432,7 +453,7 @@ class App(tk.Tk):
             self, text="Connecting…", bg=self._c("bg"), fg=self._c("dim"),
             font=(FONT, SZ_INFO), anchor="w",
         )
-        self.status.pack(fill="x", padx=16, pady=(2, 12))
+        self.status.pack(side="bottom", fill="x", padx=16, pady=(14, 12))
 
     def _refresh_status(self):
         if not hasattr(self, "status"):
@@ -962,6 +983,7 @@ class App(tk.Tk):
             return
         trouble = trouble or {}
         self.tree2.delete(*self.tree2.get_children())
+        self._cfg_raw = {}
         free_names = {m["name"] for m in self.models}
         catalog_ids = set(self.catalog_meta.get("catalog_ids", []))
         for row in rows:
@@ -975,11 +997,12 @@ class App(tk.Tk):
                 self._fallback_text(slug, trouble),
                 self._calls_text(slug, trouble),
             )
-            self.tree2.insert(
+            item = self.tree2.insert(
                 "", "end",
                 values=tuple(self._wrap_row(values)),
                 tags=(status,),
             )
+            self._cfg_raw[item] = list(values)
 
         # Fallback rows only: remember which tree row is which fallback_providers slot
         # so they can be dragged into a new order and removed by right-click.
@@ -1015,9 +1038,53 @@ class App(tk.Tk):
                 ["Nothing returned for model.default, auxiliary pins, or fallbacks.",
                  "Tip: anything pinned here is classified FREE / PAID / MISSING."],
             )
+        self._fit_config()
+
+    def _schedule_refit(self, _event=None):
+        """Re-fit on resize, debounced: the wrap has to follow the window."""
+        if self._refit_after_id:
+            self.after_cancel(self._refit_after_id)
+        self._refit_after_id = self.after(120, self._fit_config)
+
+    def _fit_config(self):
+        """Size the config columns to the panel and re-wrap to fit.
+
+        Natural width = the widest cell (plus CFG_PAD of slack). A wide window
+        therefore gets snug, mostly one-line columns; a narrow one scales them
+        down to the panel and wraps instead of scrolling.
+        """
+        if not hasattr(self, "tree2") or not self._cfg_raw:
+            return
+        avail = self.tree2.winfo_width() - 4
+        if avail < 200:
+            return
+        font = self._measure_font
+        natural = {}
+        for index, col in enumerate(CFG_COLS):
+            width = font.measure(str(self.tree2.heading(col)["text"])) + CFG_PAD
+            for raw in self._cfg_raw.values():
+                if index < len(raw):
+                    width = max(width, font.measure(str(raw[index])) + CFG_PAD)
+            natural[col] = min(width, CFG_MAX[col])
+        total = sum(natural.values())
+        if total > avail:
+            scale = avail / total
+            widths = {c: max(CFG_MIN[c], int(natural[c] * scale)) for c in CFG_COLS}
+        else:
+            widths = natural
+        for col, width in widths.items():
+            self.tree2.column(col, width=width, stretch=False)
+        self._rewrap()
         self._apply_row_height()
         self._sync_hscroll(self.tree2, self.tree2_hscroll)
         self._sync_vscroll(self.tree2, self.tree2_vscroll)
+
+    def _rewrap(self):
+        for item, raw in self._cfg_raw.items():
+            try:
+                self.tree2.item(item, values=tuple(self._wrap_row(raw)))
+            except tk.TclError:
+                pass
 
     def _render_limits(self, limits):
         """The account's live ceilings: Nous fair-share bucket + OpenRouter pool."""
@@ -1044,20 +1111,35 @@ class App(tk.Tk):
         ttk's treeview draws one line per cell unless the value carries `\\n`,
         and its rows are a single height for the whole table — so the wrapping
         is done here, and `_apply_row_height` grows the rows to fit.
+
+        Words longer than the column are broken after `/` and `-` (slugs are
+        full of both) so a model id wraps instead of spilling past the edge.
         """
         text = str(text)
         if not text or width <= 20:
             return text
-        space = font.measure(" ")
+        pieces = []                      # [chunk, needs a space before it]
+        for word in text.split():
+            is_first_word = not pieces
+            buf = ""
+            first_chunk = True
+            for char in word:
+                buf += char
+                if char in "/-":
+                    pieces.append([buf, first_chunk and not is_first_word])
+                    first_chunk = False
+                    buf = ""
+            if buf:
+                pieces.append([buf, first_chunk and not is_first_word])
         lines = []
         current = ""
-        for word in text.split():
-            candidate = word if not current else current + " " + word
+        for chunk, space_before in pieces:
+            candidate = chunk if not current else current + (" " if space_before else "") + chunk
             if not current or font.measure(candidate) <= width:
                 current = candidate
             else:
                 lines.append(current)
-                current = word
+                current = chunk
         if current:
             lines.append(current)
         return "\n".join(lines)
@@ -1066,7 +1148,7 @@ class App(tk.Tk):
         font = self._measure_font
         out = []
         for index, text in enumerate(values):
-            width = self.tree2.column(CFG_COLS[index], "width") - 18
+            width = self.tree2.column(CFG_COLS[index], "width") - CFG_PAD
             out.append(self._wrap_text(text, font, width))
         return out
 
@@ -1079,7 +1161,7 @@ class App(tk.Tk):
         for item in self.tree2.get_children():
             for value in self.tree2.item(item)["values"]:
                 lines = max(lines, str(value).count("\n") + 1)
-        lines = min(lines, 2)
+        lines = min(lines, 3)
         self._cfg_style.configure(
             "Cfg.Treeview",
             rowheight=lines * self._measure_font.metrics("linespace") + 12,
