@@ -34,6 +34,8 @@ CFG_WIDTHS = {
 }
 
 SZ_INFO = 14
+SZ_POPUP = 14        # Additional info popup body
+SZ_POPUP_META = 13   # Additional info popup meta lines
 
 MODELS_REFRESH_MS = 15 * 60 * 1000
 DEEP_REFRESH_MS = 4 * 60 * 60 * 1000
@@ -555,19 +557,19 @@ class App(tk.Tk):
         head = tk.Frame(win, bg=p["bg"])
         head.pack(fill="x", padx=22, pady=(16, 4))
         tk.Label(head, text=title, bg=p["bg"], fg=p["fg"],
-                 font=("Segoe UI Semibold", 14), anchor="w", justify="left",
+                 font=("Segoe UI Semibold", SZ_POPUP + 3), anchor="w", justify="left",
                  wraplength=wrap).pack(fill="x")
         tk.Label(head, text="   ·   ".join(f"{k} {v}" for k, v in facts),
-                 bg=p["bg"], fg=p["dim"], font=(FONT, 12), anchor="w",
+                 bg=p["bg"], fg=p["dim"], font=(FONT, SZ_POPUP_META), anchor="w",
                  justify="left", wraplength=wrap).pack(fill="x", pady=(3, 0))
-        tk.Label(head, text=chips, bg=p["bg"], fg=p["accent"], font=(FONT, 12),
+        tk.Label(head, text=chips, bg=p["bg"], fg=p["accent"], font=(FONT, SZ_POPUP_META),
                  anchor="w", justify="left", wraplength=wrap).pack(fill="x", pady=(3, 0))
 
         box = tk.Frame(win, bg=p["border"])
         box.pack(fill="both", expand=True, padx=22)
         inner = tk.Frame(box, bg=p["card"])
         inner.pack(fill="both", expand=True)
-        text = tk.Text(inner, height=14, bg=p["card"], fg=p["fg"], font=(FONT, 12),
+        text = tk.Text(inner, height=14, bg=p["card"], fg=p["fg"], font=(FONT, SZ_POPUP),
                        relief="flat", wrap="word", padx=10, pady=8)
         text.pack(side="left", fill="both", expand=True)
         sb = ttk.Scrollbar(inner, orient="vertical", command=text.yview)
