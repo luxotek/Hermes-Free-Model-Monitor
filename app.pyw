@@ -952,16 +952,24 @@ class App(tk.Tk):
 
     @staticmethod
     def _stamp_text(stamp):
-        """`2026-11-16 18:24:38` -> `11/16/2026`; '' when unreadable."""
-        match = re.match(r"^(\d{4})-(\d{2})-(\d{2})[ T]\d{2}:\d{2}", str(stamp or ""))
-        return f"{match.group(2)}/{match.group(3)}/{match.group(1)}" if match else ""
+        """`2026-11-16 18:24:38` -> `11/16/2026 18:24`; '' when unreadable.
+
+        The time of day is part of the stamp on purpose: a `retry 3h36m` delay
+        is meaningless without knowing when it started.
+        """
+        match = re.match(r"^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})", str(stamp or ""))
+        if not match:
+            return ""
+        return (f"{match.group(2)}/{match.group(3)}/{match.group(1)} "
+                f"{match.group(4)}:{match.group(5)}")
 
     @staticmethod
     def _last_error_text(slug, trouble):
-        """`11/16/2026 · 429 rate limit ×43 · retry 2s`, or `No error`.
+        """`11/16/2026 18:24 · 429 rate limit ×43 · retry 2s`, or `No error`.
 
-        Newest first, American date, and the delay last: the when is what makes
-        a bare `404 gone ×3` mean something.
+        When first, then what, then the delay: the timestamp is what makes a
+        bare `404 gone ×3` mean something, and the time of day is what makes
+        the retry delay interpretable.
         """
         rec = (trouble or {}).get("errors", {}).get(slug)
         if not rec:

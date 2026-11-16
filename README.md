@@ -36,8 +36,8 @@ Double-click **`run.ps1`** (right-click > Run with PowerShell) or **`run.cmd`**.
   A model whose name carries `preview` / `temp` / `alpha` / `beta` … renders
   amber, and the *Additional info* sheet says which marker caused it, in the
   same colour. **Last error** is the newest `API call failed …` line for that
-  slug, in the order `MM/DD/YYYY · 429 rate limit ×43 · retry 1h53m`; a model
-  that has never failed reads `No error`. **Calls** is that slug's `API call #N`
+  slug, in the order `MM/DD/YYYY HH:MM · 429 rate limit ×43 · retry 1h53m`; a
+  model that has never failed reads `No error`. **Calls** is that slug's `API call #N`
   count. Lifecycle, failover, provider and source live in the Additional-info
   popup rather than in extra columns.
 - **Columns are sized to their content**: each column fits its own widest cell,
