@@ -3,10 +3,16 @@
 Checks Hermes's 400+ model list to find which free models are live right now,
 so you can set a reliable main model and fallback chain. A tiny desktop window
 (shortened **HFMM**, the "Hermes FMM companion app") that unions two live
-sources — including stealth free SKUs that only exist in the inference catalog:
+sources and keeps only the models worth building a long-term chain on:
 
-1. `GET portal.nousresearch.com/api/nous/recommended-models` (what the free tier may pick)
-2. `GET inference-api.nousresearch.com/v1/models` (any row where prompt + completion price is 0)
+1. the Portal's `/api/nous/recommended-models` (what the free tier may pick)
+2. the inference API's `/v1/models` (any row where prompt + completion price is 0)
+3. `openrouter.ai/api/v1/models` (its `:free` and `$0` rows)
+
+The first two hosts come from your Hermes login (`auth.json`), never assumed.
+
+Previews and anything with an expiration date are dropped from the free list; the
+config tab still flags them if you already have one pinned.
 
 No install, no dependencies beyond Python 3 with tkinter (stdlib only).
 A self-contained Windows `.exe` is attached to the GitHub release for machines
@@ -17,34 +23,85 @@ that already have Hermes installed; the source run below is always current.
 Double-click **`run.ps1`** (right-click > Run with PowerShell) or **`run.cmd`**.
 `run.cmd` keeps a console open so you can see tracebacks if something breaks.
 
+On startup the app looks for the Hermes desktop process; if it is not running a
+dark sheet says *"Hermes Agent is not running — this app requires Hermes Agent
+to be running"* with **Check again** and **Continue anyway**. The check fails
+open: if the process list cannot be read, the app starts anyway.
+
+Only one copy runs at a time. A second launch finds the named mutex already
+held, raises the first copy's window (restoring it from the taskbar) and exits
+silently — no dialog, no extra window.
+
 ## Views
 
-- **Tabs** (default): *Free models* = the live catalog (context, inputs, price,
-  flags, source); *In Hermes* = everything Hermes has pinned (`model.default`,
-  auxiliary task models, fallback chain) classified as `FREE` / `PAID` /
-  `MISSING`, plus recent per-model API call counts from `logs/agent.log`.
-- **Stealth**: off-catalog models mined from `logs/agent.log` (`stealth/*` slugs),
-  with mention counts and last-seen timestamps. Buttons: *Probe selected* /
-  *Probe all* send a one-token chat request to test whether each model still
-  answers (`alive` / `missing` / `rate_limited`), *Rescan log* re-mines the log,
-  and *Auto probe (5 min)* keeps probing in the background. When a probe hits a
-  429, any `alternates` listed in the error are added to the watchlist as new
-  rows (origin `429 alternates`). Watches and probe results persist in
-  `stealth_state.json` (gitignored).
-- **Detail panel**: click any row (any tab) to see its full info stacked under
-  the list — no more squinting at truncated columns.
-- **Bubbles**: self-contained toast cards in the window's bottom-right corner
-  (UniGetUI-style): newest at the bottom, stack upward, auto-dismiss by severity,
-  click to close. Fired on model alerts, active-model loss, probe summaries, and
-  refresh errors. Alerts also land in **Settings → Alert history**.
-- **Settings** (top-right button): preferences (auto-refresh timers, bubbles),
-  alert history, and the About block with links to `LICENSE` / `NOTICE.md`.
-- **Columns auto-fit** their content; if the window is narrower than the table,
-  a horizontal scrollbar appears (no dead space).
+- **Tabs** (default): *Free models* = the live catalog (context, inputs, output,
+  released, flags, source), permanent free models only — previews and anything
+  with an expiration date are left off so the list stays safe to build a chain
+  on;
+  *Hermes config* = everything Hermes has pinned (`model.default`, auxiliary
+  task models, fallback chain) in one row each, classified as `FREE` / `PAID` /
+  `MISSING`.
+- **Config tab columns**: `Role · Model · Status · Last error · Calls`. Rows stay
+  single-line. **Status** is the verdict plus the reason (`FREE · in live free
+  list`, `PAID · not free on any source`, `MISSING · not in catalog (dead?)`).
+  A model whose name carries `preview` / `temp` / `alpha` / `beta` … renders
+  amber, and the *Additional info* sheet says which marker caused it, in the
+  same colour. **Last error** is the newest `API call failed …` line for that
+  slug, in the order `MM/DD/YYYY HH:MM · 429 rate limit ×43 · retry 1h53m`; a
+  model that has never failed reads `No error`. **Calls** is that slug's `API call #N`
+  count. Lifecycle, failover, provider and source live in the Additional-info
+  popup rather than in extra columns.
+- **Columns fit the panel.** The free tab sizes each column to its own widest
+  cell and shows a horizontal scrollbar when the table overflows. The config
+  tab has **no scrollbars**: its columns are content-sized when they fit and
+  proportionally squeezed when they do not, so the table always spans the panel
+  exactly, and its rows are slightly tighter so the whole chain fits vertically.
+  Nothing wraps on either tab.
+- **Footer, top to bottom**: tabs → *Additional info* button → free-tier limits
+  (`Nous free tier: 48/50 requests · resets in 53s · OpenRouter free pool:
+  50/50 today` — the Nous half from the `x-ratelimit-*` response headers via one
+  tiny completion) → `Recent API calls: …` → a blank line → the status line.
+  The limits and usage lines are window-level, not tab-level.
+
+- **Additional info**: select a row (any tab), then use the button above the
+  status line or the right-click menu entry to open a popup sheet laid out as
+  label-above-value sections — the config tab shows `VERDICT · LIFECYCLE ·
+  FAILOVER · RECENT CALLS · SOURCE · PROVIDER`, the free tab `CONTEXT · INPUTS ·
+  OUTPUT · RELEASED · SOURCE` — followed by the moderation/reasoning/free-tier
+  chips, the catalog description and any benchmark scores. Fixed size (not
+  resizable) and right-justified to the window: it grows to its content but is
+  capped so the header plus a readable slice of description plus the Close
+  button always fit — the description scrolls rather than pushing Close off the
+  window. Clamped on-screen.
+- **Bubbles** are always on: self-contained toast cards in the window's
+  bottom-right corner (UniGetUI-style), newest at the bottom, stacking upward,
+  auto-dismiss by severity, click to close. They fire on model alerts
+  (a pinned model no longer free or gone from the catalog), the active model
+  becoming unavailable, a **fallback firing** (`main → fallback — 429 rate
+  limit ×3`, warn), and refresh errors. Every alert also lands in
+  **Settings → Alert history**.
+- **Settings** (top-right button): preferences (auto-refresh timers), alert
+  history, and the About block with links to `LICENSE` / `NOTICE.md`.
+- **Window geometry** is remembered: it reopens at the size and position you
+  left it in (saved in `ui_state.json`, debounced while resizing). If the saved
+  spot is off-screen, it keeps the size and centers instead.
 - **Empty states**: panes with nothing to show display a centered tip block instead
   of dead whitespace.
-- **Copy model name** (or double-click any row) copies the model string — e.g.
-  `meituan/longcat-2.5:free` — ready to paste into `/model ...` or a config.
+- **Fallback chain editing**
+  - *Free models* tab: right-click a model → **Add as new fallback** (at the end
+    or at the top) or **Replace fallback** (pick the slot whose model to swap).
+  - *Hermes config* tab: drag fallback rows into a new order (main and aux rows
+    stay put), or right-click a fallback row → **Remove fallback #N**.
+  - Changes are written with `hermes config set fallback_providers`; replaced
+    entries keep any extra keys (`base_url`, `api_key`, …).
+  - Each entry's `provider` comes from the model's own reported route: the
+    portal's per-model `source` (`local` → `nous`, `openrouter` → `openrouter`)
+    or, for models found through OpenRouter's models endpoint, `openrouter`.
+    Nothing is assumed to be Nous — a model whose route is unknown is refused
+    rather than written with a guessed provider.
+- **Copy model name**: right-click a row (or double-click it) to copy the model
+  string — e.g. `meituan/longcat-2.5:free` — ready to paste into `/model ...`
+  or a config.
 
 ## What refreshes when
 
@@ -53,7 +110,7 @@ Double-click **`run.ps1`** (right-click > Run with PowerShell) or **`run.cmd`**.
   current without touching your Hermes config or logs.
 - **Deep check (4 h)**: only the Hermes config + usage counts.
 - The bottom status line shows it plainly: `N free models of M total · catalog
-  updated HH:MM · Hermes config checked HH:MM · stealth watch: N`.
+  updated HH:MM · Hermes config checked HH:MM`.
 
 ## Themes
 
@@ -66,15 +123,17 @@ The window follows whatever skin the desktop Hermes app is using, repolled every
 - the Hermes skin engine (default, ares, mono, slate, daylight, warm-lightmode,
   poseidon, sisyphus, charizard, plus any user skins in `%LOCALAPPDATA%\hermes\skins`),
 - the desktop-only presets the CLI engine doesn't expose (cyberpunk, midnight,
-  ember, nous, github, catppuccin, everforest, solarized).
+  ember, nous, github, catppuccin, everforest, solarized, nous-alt).
 
 The dropdown shows the followed theme while in Auto mode (e.g. `Auto (cyberpunk)`);
 changes apply within one poll (~3 s), no restart needed. Picking a specific theme
 from the dropdown pins it instead of following (stored in `theme_choice.json`).
-Palette roles are normalised for contrast (text, dim labels, accents, and panel
-fills are nudged until they clear minimum contrast against the background), so
-light and dark presets both read correctly. If neither source resolves, a
-built-in dark palette is used.
+Each preset's **dark** variant is used — its hand-tuned `darkColors` block from
+`apps/shared/src/theme-presets.ts` — so following `github` paints GitHub Dark
+(`#0d1117`) instead of white, and dark-only themes are unchanged. Palette roles
+are normalised for contrast (text, dim labels, accents, and panel fills are
+nudged until they clear minimum contrast against the background). If neither
+source resolves, a built-in dark palette is used.
 
 ## AI notice & license
 
@@ -86,19 +145,54 @@ product by anyone else; luxotek retains all commercial rights (`LICENSE`).
 ## Where the token comes from
 
 The app reads your existing Hermes login from
-`%LOCALAPPDATA%\hermes\auth.json` (`providers.nous.access_token`). If it reports
-an auth error, re-login to the Portal through Hermes (`hermes setup`) and try again.
+`%LOCALAPPDATA%\hermes\auth.json` (`providers.nous.access_token`). The portal
+and inference base URLs come from the same file (`portal_base_url`,
+`inference_base_url`) — if either is missing the app says so and stops rather
+than falling back to a built-in address. If it reports an auth error, re-login
+to the Portal through Hermes (`hermes setup`) and try again.
+
+Nothing in the window substitutes a constant for API data: the provider shown
+for a model comes from the route the APIs report (or from Hermes's own
+`model.provider` when the model is not on the free list), and the toolbar's
+`account:` line is derived the same way — blank when neither source answers.
+
+## OpenRouter free models
+
+The **Free models** tab always pulls OpenRouter's `GET /api/v1/models` catalog —
+the endpoint is public, so no token is needed just to look. When a valid
+OpenRouter token is present (Hermes's `.env`, or `auth.json`'s credential pool)
+it is sent along, because the authenticated payload is the set your key can
+actually call. A model is listed as free when it carries the `:free` suffix, or
+charges `$0` for both input and output:
+
+- the `:free` suffix is OR's official free marker (7 models today);
+- `google/lyria-3-clip-preview` and `google/lyria-3-pro-preview` are `$0` end to
+  end without the marker, so the price test catches them;
+- `openrouter/free` is OR's own catch-all free endpoint;
+- the count grows and shrinks as OpenRouter onboard new providers — it is a live
+  number, not a fixed list.
+
+> **Why isn't it 25?** OpenRouter's *website* (openrouter.ai/collections/free-models)
+> shows its own usage-ranked free collection; that curated view includes
+> effectively-free models with tiny-but-nonzero endpoint prices and models the
+> authenticated API payload doesn't return. HFMM lists the *live API* count, so
+> it reflects what OpenRouter publishes right now.
+
+**Using one needs your own key.** The daily-pool line (`OpenRouter free pool:
+…`) comes from `/api/v1/key` and stays hidden without a token. Setting an
+OpenRouter model as Hermes's main model with no token opens a dark sheet instead
+of writing anything: sign-up and keys links, the exact `.env` line to add, and
+the path to Hermes's `.env`. The models stay listed either way.
 
 ## Files
 
 | File | Purpose |
 |---|---|
-| `app.pyw` | The tkinter window (tabs, detail panel, toolbar, timers, Settings/About) |
-| `nous_core.py` | Auth lookup + the two API calls + union logic |
+| `app.pyw` | The tkinter window (tabs, Additional-info popup, toolbar, timers, Settings/About) |
+| `nous_core.py` | Auth lookup + the Portal / inference / OpenRouter calls + union logic |
 | `hermes_state.py` | Reads Hermes config via `hermes config get`; parses `agent.log` usage |
 | `theme.py` | Skin engine + desktop preset palettes, override persistence |
 | `alerts.py` | Per-role transition detection + taskbar flash helper |
-| `stealth.py` | Log mining, liveness probes, 429-alternate discovery |
 | `bubbles.py` | Bottom-right bubble notification stack |
 | `run.ps1` / `run.cmd` | Launchers that find a Python automatically |
 | `LICENSE` / `NOTICE.md` | Source-available non-commercial license + AI-assistance notice |
