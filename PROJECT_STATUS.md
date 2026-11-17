@@ -1,8 +1,8 @@
 # Project Status — Hermes Free Model Monitor
 
-Last updated: 2026-11-14
+Last updated: 2026-11-16
 
-Current stage: **0–5 complete; 6 (local models) parked**
+Current stage: **v0.2.0 released; 6 (local models) parked; 8 (Linux) not started**
 
 Remote: **https://github.com/luxotek/Hermes-Free-Model-Monitor** (renamed from `herms-free-mode`; now public; pushed)
 
@@ -18,6 +18,35 @@ Remote: **https://github.com/luxotek/Hermes-Free-Model-Monitor** (renamed from `
 - Release **v0.1.0** published with the exe + SHA256SUMS.txt:
   https://github.com/luxotek/Hermes-Free-Model-Monitor/releases/tag/v0.1.0
 
+## v0.2.0 (2026-11-16)
+
+Beta line merged to main (`5ac8037`) after 33 commits. The released exe is
+`dist/Hermes Free Model Monitor.exe`; the version shows in Settings → About.
+
+- **Config tab reworked** (layout B): `Role · Model · Status · Last error · Calls`,
+  single-line rows, `Status` carries its own reason, `Last error` leads with
+  `MM/DD/YYYY HH:MM` then the label, count and retry delay. Amber rows for
+  preview/temp/alpha/beta slugs, with the marker named in the popup.
+- **No scrollbars on the config tab** — columns are content-sized when they fit
+  and proportionally squeezed when they do not, so the table always spans the
+  panel; rows tightened so the chain fits vertically.
+- **Additional-info popup** rebuilt as label-above-value sections
+  (`VERDICT · LIFECYCLE · FAILOVER · RECENT CALLS · SOURCE · PROVIDER`, and
+  `CONTEXT · INPUTS · OUTPUT · RELEASED · SOURCE` on the free tab), fixed size,
+  right-justified, description scrolls so Close always fits.
+- **Alerts**: a fallback firing now raises a warn bubble with the reason
+  (`A → B — 429 rate limit ×3`), counted per pair so repeats alert and one
+  refresh does not. Bubbles are always on — the toggle is gone.
+- **OpenRouter**: the free list is always fetched (the endpoint is public); the
+  token is sent when present and is only required to *use* a model, which opens
+  a help sheet with sign-up/keys links and the `.env` line.
+- **Startup gate** for Hermes not running, and a **single-instance** mutex that
+  raises the first copy instead of opening a second.
+- **Windowless `hermes` CLI calls** (`CREATE_NO_WINDOW`), and no traceback when
+  the window closes mid-fetch.
+- **Stealth tab dropped** (`73c8000` on beta, `stealth.py` deleted): the
+  log-mined watchlist and probes are gone; the free/config union is the product.
+
 ## Roadmap
 
 - [x] 0. Safety net — git repo, status file, `.gitignore`
@@ -26,20 +55,32 @@ Remote: **https://github.com/luxotek/Hermes-Free-Model-Monitor** (renamed from `
 - [x] 3. Alerts + model actions (death notices, set main model, copy slug, session hint)
 - [x] 3b. Active-model death alert + return suppression
 - [x] 4. Stealth watch (log-mined watchlist, liveness probes, 429 `alternates` discovery)
+      — **dropped in v0.2.0**: the tab was removed on beta (`73c8000`) and
+      `stealth.py` deleted; the watchlist never earned its place next to the
+      free/config union.
 - [x] 5a. InfoSpace (alert history strip, contextual empty states)
 - [x] 5b. Bubble notifications (app-anchored bottom-right stack)
-- [ ] 7. Startup requirement check: detect missing Hermes install/login (`hermes` CLI absent,
+- [x] 7. Startup requirement check: detect missing Hermes install/login (`hermes` CLI absent,
       no `auth.json`, `HERMES_HOME` unreachable) and clearly notify instead of failing silently
+      — **partial**. Hermes not running raises a dark sheet; a missing `auth.json` or
+      `portal_base_url`/`inference_base_url` raises a clear error on the status line plus a
+      bubble. Still silent: `hermes` CLI absent (`run_hermes` swallows `FileNotFoundError`), and
+      the running check only happens at startup, not on Refresh.
 - [ ] 8. Linux version: portable paths (XDG/`$HERMES_HOME`), `xdg-open` fallback, skip
       Windows-only bits (taskbar flash, Start Menu shortcut), build/test in WSL2
-- [ ] 9. Hide/eliminate the console windows spawned when HFMM shells out to `hermes`
+- [x] 9. Hide/eliminate the console windows spawned when HFMM shells out to `hermes`
       (`hermes config get` ×4 at start/refresh + `config set` on Set main model):
       pass `CREATE_NO_WINDOW`/prefer `hermes.exe`, or read `config.yaml` directly for
       reads and keep only hidden writes
-- [ ] 10. OpenRouter free models: Settings checkbox to include OpenRouter's $0 list;
+      — **done**: `_windowless_kwargs()` (CREATE_NO_WINDOW + SW_HIDE startupinfo) wraps
+      every CLI call, reads and writes alike.
+- [x] 10. OpenRouter free models: Settings checkbox to include OpenRouter's $0 list;
        detect an installed OpenRouter token in Hermes auth; enable **Set main model**
        only for OpenRouter rows when the token exists, otherwise leave the button
        greyed for those selections
+       — **done, differently and better**: no checkbox (the list is public, so it is
+       always fetched and the token is only sent when present) and the gate moved to
+       the action, where a sheet explains how to get a key instead of greying a button.
 - [ ] 6. Parked: local model scan/load — SimSense explicitly out of scope
 
 ## Stage 4 complete (2026-11-14)
@@ -159,27 +200,26 @@ Remote: **https://github.com/luxotek/Hermes-Free-Model-Monitor** (renamed from `
 
 ## Next steps
 
-1. Nothing queued — stages 0–4 are complete; stage 5 (local model scan/load) stays parked.
+1. Nothing queued. v0.2.0 is out; #8 (Linux) is the only roadmap item left, and
+   #6 (local models) stays parked. Close the two #7 gaps (CLI-absent detection,
+   Refresh-time running check) if they ever bite.
 
 ## Open questions
 
-- Whether Hermes' own API calls can be intercepted to auto-capture 429 `alternates`
-  (currently only app-initiated probes feed discovery).
-- Probe cadence default for stealth watches (manual now; 5 min opt-in toggle available).
+- Whether Hermes' own API calls can be intercepted to capture 429 `alternates`
+  automatically (the stealth probes that used to do this are gone).
+- Whether the fallback-fired alert needs a quieter mode — it fires per occurrence,
+  so a flapping chain will stack warn bubbles.
 
-## Session handoff (2026-11-14)
+## Ops notes
 
-- **Beta worktree live**: experiments happen in `C:\Users\Luxotek\projects\hfmm-beta`
-  (git worktree, branch `beta`); `main` stays frozen at the released source in
-  `C:\Users\Luxotek\projects\nous-free-models`. Both run side by side — Start Menu
-  entries: "Hermes Free Model Monitor.lnk" (main) and
-  "Hermes Free Model Monitor (Beta).lnk".
-- Beta marks itself: window title/header show **HFMM-beta** (beta-only commit; do not
-  carry that rename into main — the release keeps the full name).
-- Finishing beta work: merge/cherry-pick `beta` → `main`, rebuild the exe, cut the next
-  release. Roadmap/todos live in this file on main; ideas can be tried in any order on
-  beta and rolled in early.
-- Ops note: scope process kills by process name + path — a broad
+- Beta work happened in `C:\Users\Luxotek\projects\hfmm-beta` (git worktree,
+  branch `beta`); `main` is now at the v0.2.0 source and the beta worktree can be
+  retired. Start Menu: "Hermes Free Model Monitor.lnk" (main) and
+  "Hermes Free Model Monitor (Beta).lnk" (beta).
+- Release flow: merge `beta` → `main`, set `APP_NAME`/`VERSION`, rebuild with
+  PyInstaller from `Hermes Free Model Monitor.spec`, regenerate
+  `dist/SHA256SUMS.txt`, tag, push, attach the exe to the GitHub release.
+- Scope process kills by process name + path — a broad
   `CommandLine -like '*hfmm-beta*'` filter matched the launching shell's own script
   text and killed the terminal mid-command.
-- Verified: both instances running with correct, distinct window titles.

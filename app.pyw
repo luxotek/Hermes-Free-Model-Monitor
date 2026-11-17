@@ -17,7 +17,8 @@ import hermes_state
 import nous_core
 import theme
 
-APP_NAME = "HFMM-beta"
+APP_NAME = "Hermes Free Model Monitor"
+VERSION = "0.2.0"
 
 FONT = "Segoe UI"
 SZ_TITLE = 20
@@ -677,6 +678,8 @@ class App(tk.Tk):
         about.pack(fill="x", padx=28)
         tk.Label(about, text="Created by luxotek", bg=p["bg"], fg=p["fg"],
                  font=("Segoe UI Semibold", 13)).pack(anchor="w")
+        tk.Label(about, text=f"Version {VERSION}", bg=p["bg"], fg=p["dim"],
+                 font=(FONT, 12)).pack(anchor="w")
         for line in (
             "Checks Hermes's 400+ model list to find which free models are live",
             "right now, so you can set a reliable main model and fallback chain.",
