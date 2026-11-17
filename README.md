@@ -77,7 +77,8 @@ silently — no dialog, no extra window.
   bottom-right corner (UniGetUI-style), newest at the bottom, stacking upward,
   auto-dismiss by severity, click to close. They fire on model alerts
   (a pinned model no longer free or gone from the catalog), the active model
-  becoming unavailable, and refresh errors. Every alert also lands in
+  becoming unavailable, a **fallback firing** (`main → fallback — 429 rate
+  limit ×3`, warn), and refresh errors. Every alert also lands in
   **Settings → Alert history**.
 - **Settings** (top-right button): preferences (auto-refresh timers), alert
   history, and the About block with links to `LICENSE` / `NOTICE.md`.

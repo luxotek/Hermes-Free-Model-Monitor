@@ -241,7 +241,12 @@ def configured_models():
 
 
 def recent_usage(lines=400):
-    """Count recent API calls per model and note fallbacks from agent.log."""
+    """Count recent API calls per model and note fallbacks from agent.log.
+
+    Each fallback is (source, target, provider) — the provider is what the log
+    line carries; the *reason* is not in it, so callers pair it with the last
+    error recorded for the source model.
+    """
     path = os.path.join(hermes_home(), "logs", "agent.log")
     counts = {}
     fallbacks = []
@@ -260,7 +265,7 @@ def recent_usage(lines=400):
             continue
         switched = FALLBACK_RE.search(line)
         if switched:
-            fallbacks.append((switched.group(1), switched.group(2)))
+            fallbacks.append((switched.group(1), switched.group(2), switched.group(3)))
     return {"counts": counts, "fallbacks": fallbacks, "last": last_model}
 
 

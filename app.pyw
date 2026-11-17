@@ -138,6 +138,7 @@ class App(tk.Tk):
         self._fb_chain = {}
         self._drag_fb = None
         self.usage_data = {"counts": {}, "fallbacks": [], "last": None}
+        self._fallback_counts = None
         self.trouble_data = {}
         self.limits_data = {}
         self._scroll_sync_after_id = None
@@ -1354,6 +1355,7 @@ class App(tk.Tk):
             self.last_deep = stamp
             self._evaluate_alerts(cfg_rows, usage, stamp)
             self._evaluate_active_alert(usage)
+            self._evaluate_fallback_alerts(usage)
 
         self._refresh_status()
         self._render_account(cfg_rows)
@@ -1400,6 +1402,45 @@ class App(tk.Tk):
                 self._record_history("critical", text)
                 self._notify("Active model gone", text, "critical")
                 self._last_alerted_active = last
+
+    def _evaluate_fallback_alerts(self, usage):
+        """A fallback firing is the one event you act on: the model you were
+        using just failed over.
+
+        `recent_usage` scans a log window, so the same line comes back on every
+        refresh; count occurrences per source→target pair and alert only on the
+        growth, so a repeat failure alerts again and one refresh does not.
+        """
+        current = {}
+        for entry in (usage or {}).get("fallbacks") or []:
+            src, dst = entry[0], entry[1]
+            current[(src, dst)] = current.get((src, dst), 0) + 1
+        known = self._fallback_counts
+        if known is None:
+            # First deep check: record what the log already holds rather than
+            # bursting a bubble for every fallback that came before it.
+            self._fallback_counts = current
+            return
+        for (src, dst), count in current.items():
+            if count <= known.get((src, dst), 0):
+                continue
+            known[(src, dst)] = count
+            text = f"{src} → {dst}"
+            reason = self._fallback_reason(src)
+            if reason:
+                text += f" — {reason}"
+            self._record_history("warn", f"Fallback: {text}")
+            self._notify("Fallback fired", text, "warn")
+        # A pair that has scrolled out of the window is forgotten, so the next
+        # occurrence alerts again rather than being read as the same old one.
+        for key in [k for k in known if k not in current]:
+            del known[key]
+
+    def _fallback_reason(self, slug):
+        """The last failure recorded for the model that fell back, if any."""
+        rec = (self.trouble_data or {}).get("errors", {}).get(slug)
+        label = (rec or {}).get("label")
+        return f"{label} ×{rec.get('count', 1)}" if label else ""
 
     def _on_tree_select(self, event=None):
         tree = getattr(event, "widget", None) or getattr(self, "tree", None)
