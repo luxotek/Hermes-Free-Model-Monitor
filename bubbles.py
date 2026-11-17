@@ -10,10 +10,9 @@ TIMEOUTS = {"critical": 9000, "warn": 7000}
 class BubbleStack:
     """Borderless toast cards anchored to the bottom-right of a widget (default: master)."""
 
-    def __init__(self, master, palette, enabled, anchor=None):
+    def __init__(self, master, palette, anchor=None):
         self.master = master
         self.palette = palette    # callable -> palette dict
-        self.enabled = enabled    # callable -> bool
         self.anchor = anchor or (lambda: master)
         self.items = []
 
@@ -24,8 +23,6 @@ class BubbleStack:
     def show(self, title, message, level="info", timeout=None):
         if level not in LEVEL_COLORS:
             level = "info"
-        if not self.enabled():
-            return None
         pal = self.palette()
         color = {
             "critical": pal["error"], "warn": pal["warn"],

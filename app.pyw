@@ -152,7 +152,6 @@ class App(tk.Tk):
         self.selected_slug = None
         self._last_alerted_active = None
         self._flash_after_id = None
-        self.bubbles_var = tk.BooleanVar(value=bool(self.ui.get("bubbles")))
         self.alert_history = []
         self._empty_frames = {}
         self.bubbles = None
@@ -170,7 +169,7 @@ class App(tk.Tk):
         self.configure(bg=self.palette["bg"])
         self._style()
         self.bubbles = bubbles.BubbleStack(
-            self, lambda: self.palette, lambda: bool(self.bubbles_var.get()),
+            self, lambda: self.palette,
             anchor=lambda: getattr(self, "nb", None),
         )
         self._build_ui()
@@ -646,8 +645,6 @@ class App(tk.Tk):
         ttk.Checkbutton(prefs, text="Auto models (15 min)", variable=self.auto_models_var,
                         command=self._apply_timers).pack(anchor="w", pady=2)
         ttk.Checkbutton(prefs, text="Deep check (4 h)", variable=self.deep_var,
-                        command=self._apply_timers).pack(anchor="w", pady=2)
-        ttk.Checkbutton(prefs, text="Bubbles", variable=self.bubbles_var,
                         command=self._apply_timers).pack(anchor="w", pady=2)
 
         sec = tk.Label(win, text="Alert history", bg=p["bg"], fg=p["accent"],
@@ -1789,7 +1786,6 @@ class App(tk.Tk):
     def _apply_timers(self):
         self.ui["auto_models"] = bool(self.auto_models_var.get())
         self.ui["deep"] = bool(self.deep_var.get())
-        self.ui["bubbles"] = bool(self.bubbles_var.get())
         save_ui_state(self.ui)
         if self._models_after_id:
             self.after_cancel(self._models_after_id)

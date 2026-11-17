@@ -73,12 +73,14 @@ silently — no dialog, no extra window.
   capped so the header plus a readable slice of description plus the Close
   button always fit — the description scrolls rather than pushing Close off the
   window. Clamped on-screen.
-- **Bubbles**: self-contained toast cards in the window's bottom-right corner
-  (UniGetUI-style): newest at the bottom, stack upward, auto-dismiss by severity,
-  click to close. Fired on model alerts, active-model loss, probe summaries, and
-  refresh errors. Alerts also land in **Settings → Alert history**.
-- **Settings** (top-right button): preferences (auto-refresh timers, bubbles),
-  alert history, and the About block with links to `LICENSE` / `NOTICE.md`.
+- **Bubbles** are always on: self-contained toast cards in the window's
+  bottom-right corner (UniGetUI-style), newest at the bottom, stacking upward,
+  auto-dismiss by severity, click to close. They fire on model alerts
+  (a pinned model no longer free or gone from the catalog), the active model
+  becoming unavailable, and refresh errors. Every alert also lands in
+  **Settings → Alert history**.
+- **Settings** (top-right button): preferences (auto-refresh timers), alert
+  history, and the About block with links to `LICENSE` / `NOTICE.md`.
 - **Window geometry** is remembered: it reopens at the size and position you
   left it in (saved in `ui_state.json`, debounced while resizing). If the saved
   spot is off-screen, it keeps the size and centers instead.
